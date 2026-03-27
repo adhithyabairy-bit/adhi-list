@@ -189,11 +189,18 @@
   }
 
   .btn-group {
-    display: flex; gap: 8px;
-    justify-content: center;
-    flex-wrap: wrap;
-    padding-bottom: 2px;
+    display: flex; gap: 10px;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    width: 100%;
+    scrollbar-width: none; /* Hide scrollbar Firefox */
+    -ms-overflow-style: none; /* Hide scrollbar IE/Edge */
+    padding-bottom: 4px;
+    mask-image: linear-gradient(to right, #000 95%, transparent 100%);
   }
+  .btn-group::-webkit-scrollbar { display: none; } /* Hide Chrome/Safari */
+
 
 
 
