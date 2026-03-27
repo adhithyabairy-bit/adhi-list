@@ -710,8 +710,10 @@ async function _fetchPage(lang, page) {
         const mov = _toMovie(m, lang);
         if (lang.startsWith('dubbed_')) {
           mov.dubbedLangs = [lang];
-          // Restore its true original language instead of calling it Dubbed globally
+          mov.isDubbedOnly = true; 
           mov.lang = (LANGS_REV[m.original_language] || m.original_language.toUpperCase());
+        } else {
+          mov.isNative = true;
         }
         MOVIES.push(mov); 
       } else {
@@ -720,11 +722,12 @@ async function _fetchPage(lang, page) {
           if (lang.startsWith('dubbed_')) {
             if (!existing.dubbedLangs) existing.dubbedLangs = [];
             if (!existing.dubbedLangs.includes(lang)) existing.dubbedLangs.push(lang);
-          } else if (existing.lang.includes('Dubbed') && !lang.startsWith('dubbed_')) {
-            existing.lang = lang[0].toUpperCase() + lang.slice(1);
+          } else {
+            existing.isNative = true; // Promoted from dubbed-only to native
           }
         }
       }
+
     });
     return d.total_pages || 0;
   } catch(e) { return 0; }
@@ -804,10 +807,11 @@ function renderGrid() {
         matchLang = activeFilter.split('_')[1] + ' dubbed';
       }
 
-      const mf = activeFilter === 'all'
-        || m.lang.toLowerCase() === matchLang
+      const mf = (activeFilter === 'all' && m.isNative)
+        || (m.lang.toLowerCase() === matchLang && m.isNative)
         || (m.dubbedLangs && m.dubbedLangs.includes(activeFilter))
-        || m.genres.map(g=>g.toLowerCase()).some(g=>g.includes(activeFilter));
+        || (m.genres.map(g=>g.toLowerCase()).some(g=>g.includes(activeFilter)));
+
       const q = searchQuery.toLowerCase();
       const ms = !q || m.title.toLowerCase().includes(q)
         || m.genres.some(g=>g.toLowerCase().includes(q))
