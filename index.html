@@ -162,10 +162,26 @@
 
 
   .search-wrap {
-    width: 100%; max-width: 480px;
+    flex: 1;
+    min-width: 280px;
+    max-width: 480px;
     position: relative;
     margin: 0;
   }
+  
+  .btn-group {
+    flex: 1 0 100%;
+    display: flex; gap: 10px;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    width: 100%;
+    scrollbar-width: none; /* Hide scrollbar Firefox */
+    -ms-overflow-style: none; /* Hide scrollbar IE/Edge */
+    padding-bottom: 4px;
+    mask-image: linear-gradient(to right, #000 95%, transparent 100%);
+  }
+  .btn-group::-webkit-scrollbar { display: none; } /* Hide Chrome/Safari */
 
 
 
@@ -544,27 +560,26 @@
     <div class="tagline">Discovery Hub — Indian & Hollywood</div>
   </div>
   
-  <nav class="header-nav">
-    <div class="search-wrap">
-      <span class="search-icon">🔍</span>
-      <input type="text" id="search" placeholder="Search by title, director, or cast..." autocomplete="off">
-    </div>
-    
-    <div class="btn-group" id="filters">
-      <button class="filter-btn active" data-filter="all">All Movies</button>
-      <button class="filter-btn" data-filter="telugu">Telugu</button>
-      <button class="filter-btn" data-filter="hindi">Hindi</button>
-      <button class="filter-btn" data-filter="tamil">Tamil</button>
-      <button class="filter-btn" data-filter="malayalam">Malayalam</button>
-      <button class="filter-btn" data-filter="kannada">Kannada</button>
-      <button class="filter-btn" data-filter="english">Hollywood</button>
-      <button class="filter-btn" data-filter="dubbed">Dubbed</button>
-      <button class="filter-btn" data-filter="action">Action</button>
-      <button class="filter-btn" data-filter="sci-fi">Sci-Fi</button>
-      <button class="filter-btn" data-filter="thriller">Thriller</button>
-    </div>
-  </nav>
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input type="text" id="search" placeholder="Search by title, director, or cast..." autocomplete="off">
+  </div>
+  
+  <div class="btn-group" id="filters">
+    <button class="filter-btn active" data-filter="all">All Movies</button>
+    <button class="filter-btn" data-filter="telugu">Telugu</button>
+    <button class="filter-btn" data-filter="hindi">Hindi</button>
+    <button class="filter-btn" data-filter="tamil">Tamil</button>
+    <button class="filter-btn" data-filter="malayalam">Malayalam</button>
+    <button class="filter-btn" data-filter="kannada">Kannada</button>
+    <button class="filter-btn" data-filter="english">Hollywood</button>
+    <button class="filter-btn" data-filter="dubbed">Dubbed</button>
+    <button class="filter-btn" data-filter="action">Action</button>
+    <button class="filter-btn" data-filter="sci-fi">Sci-Fi</button>
+    <button class="filter-btn" data-filter="thriller">Thriller</button>
+  </div>
 </header>
+
 
 
 
