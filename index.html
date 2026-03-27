@@ -419,8 +419,13 @@
   }
 
   @media (max-width: 768px) {
-    :root { --card-w: 110px; --card-h: 165px; }
-    .movie-grid { gap: 15px; padding: 15px; }
+    :root { --card-h: auto; }
+    .movie-grid { 
+      grid-template-columns: repeat(2, 1fr) !important; 
+      gap: 12px; 
+      padding: 12px; 
+    }
+    .card-poster { height: auto; aspect-ratio: 2/3; }
     .card-title { font-size: 0.75rem; }
     header { 
       grid-template-columns: 1fr;
@@ -433,6 +438,7 @@
     .card-rating-float { display: none; }
     .spin-btn { padding: 10px 20px; font-size: 0.9rem; }
   }
+
 
   .suggestion-overlay {
     position: fixed; inset: 0;
