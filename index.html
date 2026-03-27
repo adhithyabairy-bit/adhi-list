@@ -856,9 +856,9 @@ function renderGrid() {
     if (activeFilter.startsWith('dubbed_')) {
       const bLang = activeFilter.split('_')[1];
       dLang = bLang[0].toUpperCase() + bLang.slice(1) + ' Dubbed';
-    } else if (m.dubbedLangs && m.dubbedLangs.length) {
-      dLang = m.lang.split(' ')[0] + ' (+Dub)';
-    }
+    } 
+    // Removed (+Dub) suffix to keep all-movies view clean and separated from dubbed searches
+
 
     html += `
       <div class="movie-card reveal" onclick="openModalById(${m.id})">
