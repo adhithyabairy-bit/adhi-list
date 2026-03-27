@@ -101,10 +101,11 @@
     backdrop-filter: blur(25px);
     border-bottom: 1px solid var(--border);
     display: grid;
-    grid-template-columns: 1fr 1.5fr 1fr;
-    align-items: center; justify-items: center;
-    gap: 15px;
+    grid-template-columns: auto 1fr;
+    align-items: center; justify-items: stretch;
+    gap: 30px;
   }
+
 
 
 
@@ -149,9 +150,11 @@
 
   .header-nav {
     grid-column: 2;
-    display: flex; flex-direction: column; gap: 8px; align-items: center;
-    width: 100%;
+    display: flex; flex-direction: column; gap: 8px; 
+    align-items: flex-end; justify-self: end;
+    width: 100%; max-width: 800px;
   }
+
 
   .search-wrap {
     width: 100%; max-width: 480px;
