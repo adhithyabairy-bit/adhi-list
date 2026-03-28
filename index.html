@@ -1109,10 +1109,10 @@ async function askAI() {
 
   const status = document.getElementById('ai-status');
   const chatMsg = document.getElementById('ai-chat-msg');
-  status.innerHTML = "🧠 Searching...";
-  chatMsg.innerHTML = "Finding the best matches for you...";
+  status.innerHTML = '🧠 Searching...';
+  chatMsg.innerHTML = 'Finding the best matches...';
 
-  // ── STEP 1: SMART QUERY PARSING (no stopword matching) ──
+  // STEP 1: Parse query — extract language + genre signals only (no stopwords)
   const q = rawInput.toLowerCase()
     .replace(/science fiction|sci fi|scifi/g, 'scifi')
     .replace(/super\s*power|superhero|super\s*hero|superhuman/g, 'superpower')
@@ -1121,64 +1121,71 @@ async function askAI() {
     .replace(/tamizh|tml/g, 'tamil')
     .replace(/scary|spooky/g, 'horror');
 
-  const LANG_CODES = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en', bengali:'bn'};
-  const GENRE_IDS  = {action:28, adventure:12, comedy:35, drama:18, horror:27, romance:10749, thriller:53, scifi:878, fantasy:14, animation:16, crime:80, mystery:9648, family:10751};
+  const LANG_CODES = {telugu:'te',hindi:'hi',tamil:'ta',malayalam:'ml',kannada:'kn',english:'en',bengali:'bn'};
+  const GENRE_IDS  = {action:28,adventure:12,comedy:35,drama:18,horror:27,romance:10749,thriller:53,scifi:878,fantasy:14,animation:16,crime:80,mystery:9648,family:10751};
 
   let lang = '';
   let genreIds = [];
-  let kwId = '';
+  const isSuperpower = q.includes('superpower');
 
-  // Detect language
   for (const [name, code] of Object.entries(LANG_CODES)) {
     if (q.includes(name)) { lang = code; break; }
   }
 
-  // Detect superpower theme first (special case)
-  if (q.includes('superpower')) {
-    kwId = '9715';        // TMDB keyword: superhero
-    genreIds = [14, 28];  // Fantasy + Action
+  if (isSuperpower) {
+    // Fantasy + Action for superpower theme — NO keyword filter (Indian films rarely tagged)
+    genreIds = [14, 28];
   } else {
     for (const [name, id] of Object.entries(GENRE_IDS)) {
       if (q.includes(name)) genreIds.push(id);
     }
   }
 
-  // ── STEP 2: CLOSE MODAL FIRST, SHOW SPINNER ──
-  openAI(); // close the dialog so user can see the grid
+  // STEP 2: Close modal, show spinner immediately
+  openAI();
   aiMatches = [];
   aiMode = true;
   currentPage = 1;
-  renderGrid(); // shows the "Searching database…" spinner
+  renderGrid();
   setTimeout(_scrollToLabel, 80);
 
-  // ── STEP 3: SINGLE CLEAN TMDB CALL, SORTED BY VOTE COUNT ──
+  // STEP 3: Fetch from TMDB — sorted by vote_count (social proof)
   try {
     let url = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=50`;
-    if (lang)          url += `&with_original_language=${lang}`;
+    if (lang)            url += `&with_original_language=${lang}`;
     if (genreIds.length) url += `&with_genres=${[...new Set(genreIds)].join(',')}`;
-    if (kwId)          url += `&with_keywords=${kwId}`;
 
-    const resp = await fetch(url);
-    const data = await resp.json();
-    const results = data.results || [];
+    const fetches = [fetch(url).then(r => r.json())];
 
-    if (!results.length) {
-      // Fallback: plain text search if discover returned nothing
-      const fallback = await fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&page=1`);
-      const fb = await fallback.json();
-      results.push(...(fb.results || []));
+    // For superpower queries: also directly search for the most famous movies by name
+    if (isSuperpower && lang === 'te') {
+      fetches.push(fetch(`${API}/search/movie?api_key=${KEY}&query=hanu-man&page=1`).then(r => r.json()));
+      fetches.push(fetch(`${API}/search/movie?api_key=${KEY}&query=kalki+2898&page=1`).then(r => r.json()));
     }
 
-    // ── STEP 4: SCORE & RENDER ──
-    aiMatches = results.map(m => {
+    const responses = await Promise.all(fetches);
+    const allRaw = responses.flatMap(d => d.results || []);
+
+    // Deduplicate by TMDB id
+    const seen = new Set();
+    const unique = allRaw.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+
+    if (!unique.length) {
+      // Final fallback: plain text search
+      const fb = await fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&page=1`).then(r => r.json());
+      unique.push(...(fb.results || []));
+    }
+
+    // STEP 4: Score and render
+    aiMatches = unique.map(m => {
       const mov = _toMovie(m, lang || m.original_language);
-      // Social proof: vote_count dominates scoring
       const reviewScore = Math.min(60, Math.log10((m.vote_count || 1)) * 15);
       const ratingScore = (m.vote_average || 0) * 2;
       mov.aiScore = Math.min(99, Math.round(reviewScore + ratingScore));
       return mov;
     }).sort((a, b) => b.aiScore - a.aiScore).slice(0, 28);
 
+    console.log('AI results:', aiMatches.map(m => m.title + ' (' + m.aiScore + '%)'));
     renderGrid();
 
     if (aiMatches.length) {
@@ -1196,6 +1203,7 @@ async function askAI() {
     renderGrid();
   }
 }
+
 
 
 // ── MODAL ──
