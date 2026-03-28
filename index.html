@@ -395,13 +395,15 @@
     font-family: 'Space Mono', monospace;
   }
 
+
   .modal-bg {
     display: none; position: fixed; inset: 0;
     background: rgba(0, 0, 0, 0.92);
     backdrop-filter: blur(12px);
-    z-index: 1000;
+    z-index: 3000;
     padding: 20px; align-items: center; justify-content: center;
   }
+
   .modal-bg.open { display: flex; animation: fade-in 0.4s ease forwards; }
 
   .modal {
@@ -671,8 +673,10 @@
 
 
 
+
 <!-- AI SECTION -->
-<div class="ai-chat" id="ai-chat" style="display:none; max-width:600px; margin: 0 auto 30px; padding: 24px; background:var(--surface); border:1px solid #2dc65340; border-radius:18px; text-align:left; position:relative;">
+<div class="ai-chat" id="ai-chat" style="display:none; max-width:600px; margin: 0 auto; padding: 24px; background:var(--surface); border:1px solid #2dc65340; border-radius:18px; text-align:left; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); z-index:3001; box-shadow:0 30px 100px rgba(0,0,0,0.9);">
+
   <button onclick="openAI()" style="position:absolute; top:15px; right:15px; background:none; border:none; color:var(--muted); font-size:1.4rem; cursor:pointer;" title="Close">✕</button>
   <div style="font-family:'Bebas Neue',sans-serif; font-size:1.6rem; color: #2dc653; margin-bottom: 12px; display:flex; align-items:center; gap:8px;">
     ✨ AI Movie Matchmaker
