@@ -1209,33 +1209,37 @@ async function askAI() {
 
 
 
+
     }).map(m => {
-      // ── ACCURATE SOCIAL PROOF SCORING (Max 100%) ──
-      // 1. Social Trust: High weight for volume of reviews
-      const reviewWeight = Math.min(40, Math.log10((m.vote_count || 0) + 1) * 10);
-      
-      // 2. Trending Weight: Low weight for raw TMDB popularity
+      // ── ADVANCED THEMATIC & SOCIAL PROOF SCORING (Max 100%) ──
+      const reviewWeight = Math.min(30, Math.log10((m.vote_count || 0) + 1) * 7);
       const trendingWeight = Math.min(10, (m.popularity || 0) / 100);
-      
-      // 3. User Rating Weight
-      const ratingWeight = (m.vote_average || 0) * 3;
+      const ratingWeight = (m.vote_average || 0) * 2;
 
       let score = reviewWeight + trendingWeight + ratingWeight;
       
-      // Popularity Correction (User specifically asked for hits)
-      if (isPopular) score += (reviewWeight * 0.8); 
+      // Theme Detection: Super Power specific boost
+      if (input.includes('superpower')) {
+        const fullText = (m.title + ' ' + m.desc).toLowerCase();
+        // Hanu-man & Superhero specific semantic matches
+        if (fullText.includes('hanuman')) score += 50; 
+        if (fullText.includes('superhero') || fullText.includes('supernatural') || fullText.includes('divine power')) score += 40;
+      }
+
+      if (isPopular) score += (reviewWeight * 0.5); 
 
       // Strict Matches
-      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 50;
+      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 45;
       if (year && m.year === year) score += 10;
-      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 40;
+      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 35;
       
-      // Future Movie Penalty (Stops placeholders from outranking blockbusters)
+      // Future Movie Penalty
       if (m.year > 2025 && (m.vote_count || 0) < 50) score -= 60;
 
       m.aiScore = Math.min(99, Math.round(score));
       return m;
     }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 16);
+
 
 
 
