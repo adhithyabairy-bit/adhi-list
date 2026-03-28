@@ -1227,45 +1227,61 @@ async function askAI() {
 // ── Fallback: pure TMDB smart search (used when Groq key missing or fails) ──
 async function _tmdbFallback(rawInput, status, chatMsg) {
   try {
-    const q = rawInput.toLowerCase()
-      .replace(/\b(telgu|telgur|telegu)\b/g, 'telugu')
-      .replace(/science fiction|sci[ -]fi/g, 'scifi')
-      .replace(/super\s*power|superhero/g, 'superpower');
-
-    const LANG_MAP = {telugu:'te',hindi:'hi',tamil:'ta',malayalam:'ml',kannada:'kn',english:'en',bengali:'bn'};
-    let lang = '';
-    for (const [n, c] of Object.entries(LANG_MAP)) { if (q.includes(n)) { lang = c; break; } }
-
-    const STOP = new Set(['movies','movie','films','film','popular','best','top','latest','new',
-      'good','great','watch','find','the','and','for','with','like','similar',
-      'telugu','hindi','tamil','malayalam','kannada','english','bengali','indian','south']);
+    const q = rawInput.toLowerCase();
+    
+    // 1. Precise Language Extraction
+    const L_EXT = {te:/telugu|tollywood/i, hi:/hindi|bollywood/i, ta:/tamil|kollywood/i, ml:/malayalam/i, kn:/kannada/i};
+    let fLang = 'en';
+    for (const [c, r] of Object.entries(L_EXT)) { if (r.test(q)) { fLang = c; break; } }
+    
+    // 2. Keyword cleanup
+    const STOP = new Set(['movies','movie','films','film','popular','best','top','latest','new','good','great','watch','find','the','and','for','with','like','similar','telugu','hindi','tamil','malayalam','kannada','english','bengali','indian','south']);
     const kw = q.split(/\s+/).filter(w => w.length > 2 && !STOP.has(w)).join(' ').trim();
 
+    const localeParams = fLang && fLang !== 'en' ? `&language=${fLang}-IN&region=IN` : '';
     const calls = [];
-    if (kw) calls.push(fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(kw)}&page=1`).then(r=>r.json()));
-    if (lang) {
-      const GIDS = {action:28,comedy:35,drama:18,horror:27,thriller:53,scifi:878,fantasy:14,superpower:[14,28]};
-      const gIds = [];
-      for (const [n,id] of Object.entries(GIDS)) { if (q.includes(n)) Array.isArray(id)?gIds.push(...id):gIds.push(id); }
-      let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=100&with_original_language=${lang}`;
-      if (gIds.length) dUrl += `&with_genres=${[...new Set(gIds)].join(',')}`;
-      calls.push(fetch(dUrl).then(r=>r.json()));
+    
+    // 3. Directed TMDB Search
+    if (kw) {
+      calls.push(fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(kw)}&page=1${localeParams}`)
+        .then(r=>r.json()).then(d => d.results || []));
     }
-    if (!calls.length) calls.push(fetch(`${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=500`).then(r=>r.json()));
+    
+    // 4. Directed TMDB Discovery
+    if (fLang && fLang !== 'en') {
+      const gids = {action:28,comedy:35,scifi:878,horror:27,thriller:53,drama:18,fantasy:14};
+      const gMatch = Object.entries(gids).filter(([k]) => q.includes(k)).map(e => e[1]).join(',');
+      let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=50&with_original_language=${fLang}${localeParams}`;
+      if (gMatch) dUrl += `&with_genres=${gMatch}`;
+      calls.push(fetch(dUrl).then(r=>r.json()).then(d => d.results || []));
+    }
+
+    if (!calls.length) {
+      calls.push(fetch(`${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=500`).then(r=>r.json()).then(d => d.results || []));
+    }
 
     const resps = await Promise.all(calls);
-    const allRaw = resps.flatMap(d => d.results || []);
+    const rawMovies = resps.flatMap(r => Array.isArray(r) ? r : [r]).filter(Boolean);
+
+    // 5. Ultimate Fallback Firewall 
     const seen = new Set();
-    const pool = (lang ? allRaw.filter(m => m.original_language === lang) : allRaw)
-      .filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
-    const src  = pool.length >= 3 ? pool : allRaw.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+    const unique = rawMovies.filter(m => {
+      if (!m.id || seen.has(m.id)) return false;
+      if (fLang && fLang !== 'en' && (m.original_language || '').toLowerCase() !== fLang.toLowerCase()) return false;
+      seen.add(m.id);
+      return true;
+    });
 
-    aiMatches = src.map(m => {
-      const mov = _toMovie(m, lang || m.original_language);
-      mov.aiScore = Math.min(99, Math.round(Math.log10((m.vote_count||1)+1)*17 + (m.vote_average||0)*2));
+    aiMatches = unique.map((m, i) => {
+      const mov = _toMovie(m, fLang || m.original_language);
+      const isSearchMatch = i < (kw ? 5 : 0);
+      const popular = Math.log10((m.vote_count || 1) + 1) * 15;
+      mov.aiScore = Math.min(99, Math.round((isSearchMatch ? 60 : 40) + popular + (m.vote_average || 0)));
       return mov;
-    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 28);
+    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 30);
 
+    const label = document.getElementById('grid-label');
+    if (label) label.innerText = fLang && fLang !== 'en' ? `Smart Discovery: Verified ${LANGS_REV[fLang]} Cinema` : `Smart Search Results`;
     renderGrid();
     if (aiMatches.length) {
       if (status)  status.innerHTML  = `✨ Found ${aiMatches.length} results!`;
