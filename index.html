@@ -1118,14 +1118,18 @@ async function askAI() {
   openAI();
   aiMatches = [];
   aiMode = true;
+  aiMatches = [];
+  searchQuery = ''; // Clear regular search
   currentPage = 1;
-  renderGrid();
+  const label = document.getElementById('grid-label');
+  const chatMsg = document.getElementById('ai-chat-msg');
+  if (label) label.innerText = `AI is searching for "${rawInput}"...`;
+  if (chatMsg) chatMsg.innerHTML = 'Thinking... (LPU Powered)';
+  renderGrid(); // Empty grid for loading effect
   setTimeout(_scrollToLabel, 80);
 
   const status  = document.getElementById('ai-status');
-  const chatMsg = document.getElementById('ai-chat-msg');
   if (status)  status.innerHTML  = '⚡ AI Processing...';
-  if (chatMsg) chatMsg.innerHTML = 'Getting recommendations from Groq AI...';
 
   // ── If no Groq key, fall back to smart TMDB search ──
   if (!GROQ_KEY) {
@@ -1186,25 +1190,26 @@ async function askAI() {
       return true;
     });
 
-    // ── STEP 3: Multi-Layer Language Firewall ──
-    const L_EXTRACT = {te:/telugu|tollywood/i, hi:/hindi|bollywood/i, ta:/tamil|kollywood/i, ml:/malayalam/i, kn:/kannada/i};
+    // ── STEP 3: The "Failsafe" Industry Firewall ──
+    const L_EXT = {te:/telugu|tollywood/i, hi:/hindi|bollywood/i, ta:/tamil|kollywood/i, ml:/malayalam/i, kn:/kannada/i};
     let fLang = lang;
-    if (!fLang) { for (const [code, reg] of Object.entries(L_EXTRACT)) { if (reg.test(rawInput)) { fLang = code; break; } } }
+    if (!fLang) { for (const [c, r] of Object.entries(L_EXT)) { if (r.test(rawInput)) { fLang = c; break; } } }
     
-    // Strict Industry Isolation: Filter out ANY movie from the wrong industry (Global Fix)
+    // IF WE ARE IN REGIONAL MODE, DELETE EVERYTHING THAT IS NOT THAT LANGUAGE
     const pool = (fLang && fLang !== 'en') 
       ? unique.filter(m => (m.original_language || '').toLowerCase() === fLang.toLowerCase()) 
       : unique;
 
+    // Map to permanent results but prioritize language integrity
     aiMatches = pool.map((m, i) => {
-      const mov     = _toMovie(m, fLang || m.original_language);
-      const isPick  = i < titles.length; 
-      const social  = Math.min(15, Math.log10((m.vote_count || 1) + 1) * 3);
-      mov.aiScore   = Math.min(99, Math.round((isPick ? 85 : 45) + social + (m.vote_average || 0)));
+      const mov = _toMovie(m, fLang || m.original_language);
+      const isAIPick = i < titles.length; 
+      const popular = Math.log10((m.vote_count || 1) + 1) * 10;
+      mov.aiScore = Math.min(99, Math.round((isAIPick ? 80 : 40) + popular + (m.vote_average || 0)));
       return mov;
-    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 40);
+    }).sort((a,b) => b.aiScore - a.aiScore);
 
-    if (label) label.innerText = fLang && fLang !== 'en' ? `AI Results: Verified ${fLang.toUpperCase()} Movies` : `AI Results for "${rawInput}"`;
+    if (label) label.innerText = (fLang && fLang !== 'en') ? `Showing 100% Pure ${LANGS_REV[fLang] || fLang.toUpperCase()} Results` : `AI Results for "${rawInput}"`;
     renderGrid();
 
     if (aiMatches.length) {
