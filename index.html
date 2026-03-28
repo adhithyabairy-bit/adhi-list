@@ -1120,6 +1120,7 @@ async function askAI() {
     .replace(/tamizh|tml|tmil/g, 'tamil')
     .replace(/science fiction|scifi|sci-fi|sci fi/g, 'sci-fi')
     .replace(/superpower|superhero|super power|super hero|super powers/g, 'superpower')
+    .replace(/superpower|superhero|super power|super hero|super powers|superhuman/g, 'superpower')
     .replace(/b4|befor/g, 'before')
     .replace(/aftr|aftre/g, 'after')
     .replace(/scary|ghost|spooky/g, 'horror')
@@ -1177,11 +1178,14 @@ async function askAI() {
       } catch(e) { return { results: [] }; }
     }
 
-    const discoUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=popularity.desc&page=1` +
+
+    const discoUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=popularity.desc&page=1&vote_count.gte=50` +
       (targetGenres.map(g => `&with_genres=${g}`).join(',')) +
       (targetLang ? `&with_original_language=${targetLang}` : "") +
+      (keywordId ? `&with_keywords=${keywordId}` : "") + 
       (dateLTE ? `&release_date.lte=${dateLTE}` : "") +
       (dateGTE ? `&release_date.gte=${dateGTE}` : "");
+
     const searchUrl = `${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&page=1`;
 
     const [dData, sData] = await Promise.all([
