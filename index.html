@@ -1110,18 +1110,20 @@ async function askAI() {
   status.innerHTML = "✨ AI Matchmaker is analyzing...";
   chatMsg.innerHTML = "Scanning local database & cloud archives...";
 
+
   // 1. EXTRACT FILTERS
   let input = rawInput
     .replace(/telgu|telgur|tlg|telegu/g, 'telugu')
     .replace(/hindhi|hndi|hnd/g, 'hindi')
     .replace(/tamizh|tml|tmil/g, 'tamil')
     .replace(/scifi|sci-fi|sci fi/g, 'sci-fi')
-    .replace(/superpower|superhero/g, 'superpower')
+    .replace(/superpower|superhero|super power|super hero/g, 'superpower')
     .replace(/b4|befor/g, 'before')
-    .replace(/aftr|aftre/g, 'after');
+    .replace(/aftr|aftre/g, 'after')
+    .replace(/scary|ghost|spooky/g, 'horror');
 
-  const GENS = {action:28, adventure:12, animation:16, comedy:35, crime:80, drama:18, family:10751, fantasy:14, history:36, horror:27, mystery:9648, romance:10749, 'sci-fi':878, thriller:53, war:10752, western:37};
-  const LGS = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en'};
+  const GENS = {action:28, adventure:12, animation:16, comedy:35, crime:80, drama:18, family:10751, fantasy:14, history:36, horror:27, mystery:9648, romance:10749, 'sci-fi':878, thriller:53, war:10752, western:37, superpower:[14,28]};
+  const LGS = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en', bengali:'bn'};
   
   let targetGenres = [];
   let targetLang = '';
@@ -1134,8 +1136,16 @@ async function askAI() {
     else if (input.includes('after')) dateGTE = `${year}-12-31`;
     else { dateGTE = `${year}-01-01`; dateLTE = `${year}-12-31`; }
   }
-  Object.keys(GENS).forEach(g => { if (input.includes(g)) targetGenres.push(GENS[g]); });
+
+  // Smart Genre Extraction (Supports Arrays like superpower -> [14,28])
+  Object.keys(GENS).forEach(g => { 
+    if (input.includes(g)) {
+      if (Array.isArray(GENS[g])) targetGenres.push(...GENS[g]);
+      else targetGenres.push(GENS[g]);
+    }
+  });
   Object.keys(LGS).forEach(l => { if (input.includes(l)) targetLang = LGS[l]; });
+
   
   // ── INSTANT LOCAL SEARCH ──
   let localResults = MOVIES.filter(m => {
@@ -1173,19 +1183,36 @@ async function askAI() {
       input.length > 3 ? _fastFetch(searchUrl) : Promise.resolve({results:[]})
     ]);
     
+
     const apiResults = [...(dData.results || []), ...(sData.results || [])];
-    const combined = [...localResults, ...apiResults.map(m => _toMovie(m, targetLang || 'en'))];
+    const combined = [...localResults, ...apiResults.map(m => _toMovie(m, targetLang || m.original_language))];
     const uniqueMap = new Map();
     combined.forEach(m => uniqueMap.set(m.tmdbId || m.id, m));
     
-    aiMatches = Array.from(uniqueMap.values()).map(m => {
+    // ── STRICT SIFTING (ACCURACY) ──
+    aiMatches = Array.from(uniqueMap.values()).filter(m => {
+      // If language was requested, must match
+      if (targetLang && m.tmdbId) {
+        // Find original tmdb data if available for language check
+        const raw = apiResults.find(a => a.id === m.tmdbId);
+        if (raw && raw.original_language !== targetLang) return false;
+      }
+      // If genre was requested, must match
+      if (targetGenres.length && m.tmdbId) {
+        const raw = apiResults.find(a => a.id === m.tmdbId);
+        if (raw && !raw.genre_ids.some(gid => targetGenres.includes(gid))) return false;
+      }
+      return true;
+    }).map(m => {
       let score = m.popularity || 0;
-      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 1000;
-      if (year && m.year === year) score += 500;
-      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 800;
+      // High weight for exact matches
+      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 2000;
+      if (year && m.year === year) score += 1000;
+      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 1500;
       m.aiScore = score;
       return m;
     }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 16);
+
 
     if (aiMatches.length === 0) {
       status.innerHTML = "No matches found. Try different keywords!";
