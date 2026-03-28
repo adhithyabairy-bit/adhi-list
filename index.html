@@ -1098,6 +1098,7 @@ function openAI() {
 
 
 
+
 document.getElementById('ai-input')?.addEventListener('keypress', e => {
   if (e.key === 'Enter') askAI();
 });
@@ -1107,41 +1108,7 @@ async function askAI() {
   const rawInput = inputEl?.value.trim() || '';
   if (!rawInput) return;
 
-  const status = document.getElementById('ai-status');
-  const chatMsg = document.getElementById('ai-chat-msg');
-  status.innerHTML = '🧠 Searching...';
-  chatMsg.innerHTML = 'Finding the best matches...';
-
-  // STEP 1: Parse query — extract language + genre signals only (no stopwords)
-  const q = rawInput.toLowerCase()
-    .replace(/science fiction|sci fi|scifi/g, 'scifi')
-    .replace(/super\s*power|superhero|super\s*hero|superhuman/g, 'superpower')
-    .replace(/telgu|telgur|telegu/g, 'telugu')
-    .replace(/hindhi|hndi/g, 'hindi')
-    .replace(/tamizh|tml/g, 'tamil')
-    .replace(/scary|spooky/g, 'horror');
-
-  const LANG_CODES = {telugu:'te',hindi:'hi',tamil:'ta',malayalam:'ml',kannada:'kn',english:'en',bengali:'bn'};
-  const GENRE_IDS  = {action:28,adventure:12,comedy:35,drama:18,horror:27,romance:10749,thriller:53,scifi:878,fantasy:14,animation:16,crime:80,mystery:9648,family:10751};
-
-  let lang = '';
-  let genreIds = [];
-  const isSuperpower = q.includes('superpower');
-
-  for (const [name, code] of Object.entries(LANG_CODES)) {
-    if (q.includes(name)) { lang = code; break; }
-  }
-
-  if (isSuperpower) {
-    // Fantasy + Action for superpower theme — NO keyword filter (Indian films rarely tagged)
-    genreIds = [14, 28];
-  } else {
-    for (const [name, id] of Object.entries(GENRE_IDS)) {
-      if (q.includes(name)) genreIds.push(id);
-    }
-  }
-
-  // STEP 2: Close modal, show spinner immediately
+  // Close modal & show loading state immediately
   openAI();
   aiMatches = [];
   aiMode = true;
@@ -1149,61 +1116,105 @@ async function askAI() {
   renderGrid();
   setTimeout(_scrollToLabel, 80);
 
-  // STEP 3: Fetch from TMDB — sorted by vote_count (social proof)
+  const status  = document.getElementById('ai-status');
+  const chatMsg = document.getElementById('ai-chat-msg');
+  if (status)  status.innerHTML  = '🧠 Searching...';
+  if (chatMsg) chatMsg.innerHTML = 'Finding your movies...';
+
   try {
-    let url = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=50`;
-    if (lang)            url += `&with_original_language=${lang}`;
-    if (genreIds.length) url += `&with_genres=${[...new Set(genreIds)].join(',')}`;
+    // 1. Normalise
+    const q = rawInput.toLowerCase()
+      .replace(/\b(telgu|telgur|telegu)\b/g, 'telugu')
+      .replace(/\b(hindhi|hndi)\b/g, 'hindi')
+      .replace(/\b(tamizh|tml)\b/g, 'tamil')
+      .replace(/science fiction|sci fi/g, 'sci-fi')
+      .replace(/super\s*power|superhero|super\s*hero|superhuman/g, 'superpower');
 
-    const fetches = [fetch(url).then(r => r.json())];
-
-    // For superpower queries: also directly search for the most famous movies by name
-    if (isSuperpower && lang === 'te') {
-      fetches.push(fetch(`${API}/search/movie?api_key=${KEY}&query=hanu-man&page=1`).then(r => r.json()));
-      fetches.push(fetch(`${API}/search/movie?api_key=${KEY}&query=kalki+2898&page=1`).then(r => r.json()));
+    // 2. Detect language
+    const LANGS = {telugu:'te',hindi:'hi',tamil:'ta',malayalam:'ml',kannada:'kn',english:'en',bengali:'bn'};
+    let lang = '';
+    for (const [name, code] of Object.entries(LANGS)) {
+      if (q.includes(name)) { lang = code; break; }
     }
 
-    const responses = await Promise.all(fetches);
-    const allRaw = responses.flatMap(d => d.results || []);
+    // 3. Strip stopwords → meaningful keywords only
+    const STOP = new Set([
+      'movies','movie','films','film','popular','best','top','latest','new','old',
+      'good','great','watch','find','give','some','the','and','for','with',
+      'telugu','hindi','tamil','malayalam','kannada','english','bengali',
+      'indian','south','bollywood','hollywood','tollywood','kollywood',
+    ]);
+    const keywords = q.split(/\s+/).filter(w => w.length > 2 && !STOP.has(w)).join(' ').trim();
 
-    // Deduplicate by TMDB id
-    const seen = new Set();
+    // 4. Genre detection for discover enrichment
+    const GENRE_MAP = {
+      action:28, adventure:12, comedy:35, drama:18, horror:27,
+      romance:10749, thriller:53, 'sci-fi':878, fantasy:14,
+      animation:16, crime:80, mystery:9648, family:10751, superpower:[14,28],
+    };
+    const genreIds = [];
+    for (const [name, id] of Object.entries(GENRE_MAP)) {
+      if (q.includes(name)) { Array.isArray(id) ? genreIds.push(...id) : genreIds.push(id); }
+    }
+
+    // 5. Fire calls in parallel
+    const calls = [];
+
+    // PRIMARY — text search (exact, fast, like ChatGPT-style lookup)
+    if (keywords) {
+      calls.push(fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(keywords)}&page=1`).then(r => r.json()));
+    }
+
+    // SECONDARY — language discover (enriches with more same-language titles)
+    if (lang) {
+      let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=200&with_original_language=${lang}`;
+      const g = [...new Set(genreIds)];
+      if (g.length) dUrl += `&with_genres=${g.join(',')}`;
+      calls.push(fetch(dUrl).then(r => r.json()));
+    }
+
+    // FALLBACK — popular all-time if nothing to search
+    if (!calls.length) {
+      calls.push(fetch(`${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=500`).then(r => r.json()));
+    }
+
+    const responses = await Promise.all(calls);
+    const allRaw   = responses.flatMap(d => d.results || []);
+
+    // 6. Deduplicate
+    const seen   = new Set();
     const unique = allRaw.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
 
-    if (!unique.length) {
-      // Final fallback: plain text search
-      const fb = await fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&page=1`).then(r => r.json());
-      unique.push(...(fb.results || []));
-    }
+    // 7. Language post-filter (keep all if filtering drops < 3 results)
+    const langFiltered = lang ? unique.filter(m => m.original_language === lang) : unique;
+    const pool = (lang && langFiltered.length >= 3) ? langFiltered : unique;
 
-    // STEP 4: Score and render
-    aiMatches = unique.map(m => {
-      const mov = _toMovie(m, lang || m.original_language);
-      const reviewScore = Math.min(60, Math.log10((m.vote_count || 1)) * 15);
-      const ratingScore = (m.vote_average || 0) * 2;
-      mov.aiScore = Math.min(99, Math.round(reviewScore + ratingScore));
+    // 8. Score & rank by social proof
+    aiMatches = pool.map(m => {
+      const mov    = _toMovie(m, lang || m.original_language);
+      const social = Math.min(60, Math.log10((m.vote_count || 1) + 1) * 17);
+      const qual   = (m.vote_average || 0) * 2;
+      mov.aiScore  = Math.min(99, Math.round(social + qual));
       return mov;
     }).sort((a, b) => b.aiScore - a.aiScore).slice(0, 28);
 
-    console.log('AI results:', aiMatches.map(m => m.title + ' (' + m.aiScore + '%)'));
     renderGrid();
 
     if (aiMatches.length) {
-      status.innerHTML = `✨ Found ${aiMatches.length} results!`;
-      chatMsg.innerHTML = `Top match: <strong>${aiMatches[0].title}</strong>`;
+      if (status)  status.innerHTML  = `✨ Found ${aiMatches.length} results!`;
+      if (chatMsg) chatMsg.innerHTML = `Top match: <strong>${aiMatches[0].title}</strong>`;
     } else {
-      status.innerHTML = 'No results found. Try simpler keywords.';
+      if (status) status.innerHTML = 'No results — try different keywords.';
       aiMode = false;
       renderGrid();
     }
   } catch (e) {
-    console.error('AI search error:', e);
-    status.innerHTML = 'Search failed — check your connection.';
+    console.error('AI error:', e);
+    if (status) status.innerHTML = 'Search failed — check your connection.';
     aiMode = false;
     renderGrid();
   }
 }
-
 
 
 // ── MODAL ──
