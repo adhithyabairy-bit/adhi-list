@@ -1178,8 +1178,9 @@ async function askAI() {
 
     // Parallel Discovery scan with industry-specific filters
     if (fLang && fLang !== 'en') {
-      const gids = {action:28,comedy:35,scifi:878,horror:27,thriller:53,drama:18,fantasy:14};
-      const moodGenres = Object.entries(gids).filter(([k]) => rawInput.toLowerCase().includes(k)).map(e => e[1]).join(',');
+      const qNorm = rawInput.toLowerCase().replace(/science fiction|sci[ -]fi/g, 'scifi').replace(/super\s*power|superhero/g, 'superpower');
+      const gids = {action:28,comedy:35,scifi:878,horror:27,thriller:53,drama:18,fantasy:14,superpower:878};
+      const moodGenres = Object.entries(gids).filter(([k]) => qNorm.includes(k)).map(e => e[1]).join(',');
       let discUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&with_original_language=${fLang}${localeParams}`;
       if (moodGenres) discUrl += `&with_genres=${moodGenres}`;
       calls.push(fetch(discUrl).then(r => r.json()).then(d => d.results || []));
@@ -1200,8 +1201,9 @@ async function askAI() {
     aiMatches = unique.map((m, i) => {
       const mov     = _toMovie(m, fLang || m.original_language);
       const isPick  = i < titles.length; 
-      const popular = Math.log10((m.vote_count || 1) + 1) * 15;
-      mov.aiScore   = Math.min(99, Math.round((isPick ? 80 : 40) + popular + (m.vote_average || 0)));
+      const popular = Math.log10((m.vote_count || 1) + 1) * 5;
+      // UNCAP SCORE & FORCE AI PRIORITY: Verified AI picks get a +500 baseline so they never lose to raw popularity
+      mov.aiScore   = (isPick ? 500 : 0) + popular + (m.vote_average || 0);
       return mov;
     }).sort((a,b) => b.aiScore - a.aiScore);
 
@@ -1275,8 +1277,8 @@ async function _tmdbFallback(rawInput, status, chatMsg) {
     aiMatches = unique.map((m, i) => {
       const mov = _toMovie(m, fLang || m.original_language);
       const isSearchMatch = i < (kw ? 5 : 0);
-      const popular = Math.log10((m.vote_count || 1) + 1) * 15;
-      mov.aiScore = Math.min(99, Math.round((isSearchMatch ? 60 : 40) + popular + (m.vote_average || 0)));
+      const popular = Math.log10((m.vote_count || 1) + 1) * 5;
+      mov.aiScore = (isSearchMatch ? 500 : 0) + popular + (m.vote_average || 0);
       return mov;
     }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 30);
 
