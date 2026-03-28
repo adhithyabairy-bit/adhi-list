@@ -505,58 +505,88 @@
     header { 
       flex-direction: column;
       align-items: center; justify-content: center;
-      padding: 25px 15px 15px; gap: 20px;
+      padding: 15px; gap: 15px;
     }
     
     .logo-area { align-items: center; text-align: center; }
 
-    .header-nav { align-items: center; width: 100%; }
-
-    .logo {
-      font-size: 2.8rem;
+    .header-nav { 
+      align-items: center; 
+      width: 100%; 
+      min-width: 0;
     }
 
+    .logo {
+      font-size: 2.4rem;
+    }
+
+    .tagline {
+      font-size: 0.6rem;
+    }
 
     .search-wrap {
-      max-width: 320px;
+      max-width: 100%;
     }
 
     .search-wrap input {
-      padding: 12px 15px 12px 45px;
-      font-size: 0.85rem;
-      border-radius: 14px;
+      padding: 12px 15px 12px 40px;
+      font-size: 16px; /* Font size 16px prevents iOS zoom */
+      border-radius: 12px;
+    }
+
+    .search-icon {
+      left: 15px;
     }
 
     .btn-group {
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 6px;
-      max-width: 370px;
-      margin: 0 auto;
+      justify-content: flex-start;
+      flex-wrap: nowrap;
+      gap: 8px;
+      max-width: 100%;
+      margin: 0;
+      padding-bottom: 5px;
+      -webkit-overflow-scrolling: touch;
     }
-
-
 
     .filter-btn {
-      padding: 8px 20px;
-      font-size: 0.75rem;
-      border-radius: 100px;
+      padding: 8px 16px;
+      font-size: 0.8rem;
+      border-radius: 20px;
+      flex-shrink: 0;
     }
 
-    .genre-filter { display: block !important; }
+    .genre-filter { display: inline-block !important; }
 
-
-
-
-
+    .ai-chat {
+      width: 95% !important;
+      padding: 15px !important;
+    }
+    
+    .ai-input-wrap {
+      flex-wrap: wrap;
+    }
+    
+    .ai-input-wrap input {
+      width: 100%;
+    }
+    
+    .ai-input-wrap button {
+      width: 100%;
+      padding: 12px !important;
+    }
+    
     .spin-section { 
-      padding: 12px; gap: 8px; 
+      padding: 12px 15px; gap: 8px; 
       position: sticky; top: 0; z-index: 999;
       background: rgba(5, 5, 7, 0.95);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--border);
     }
-    .spin-btn { padding: 10px 20px; font-size: 0.9rem; flex: 1; }
+    .spin-btn { padding: 12px 15px; font-size: 0.85rem; flex: 1; }
+    
+    /* Adjust Modal */
+    .modal-poster-wrap { height: auto; aspect-ratio: 2/3; flex: none; }
+    .modal-content { padding: 20px; }
   }
 
 
@@ -697,9 +727,9 @@
     <div id="ai-status" style="font-size:0.75rem; color:var(--muted); margin-bottom:15px; letter-spacing:1px; text-transform:uppercase;">Waiting for your query...</div>
     <div id="ai-chat-msg" style="font-size:0.95rem; line-height:1.5; margin-bottom:20px; color:#ddd; min-height:60px;">Hello! I'm your cinematic assistant. Ask me for movies like "Telugu sci-fi before 2000" or "Dhanush action movies".</div>
     
-    <div style="display:flex; gap:10px;">
-      <input type="text" id="ai-input" placeholder="Type your movie request..." style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px; color:#fff; outline:none; font-family:inherit;">
-      <button class="page-btn active" onclick="askAI()" style="padding:0 25px; background:var(--accent2); border:none;">Find Movie</button>
+    <div class="ai-input-wrap" style="display:flex; gap:10px;">
+      <input type="text" id="ai-input" placeholder="Type your movie request..." style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px; color:#fff; outline:none; font-family:inherit; min-width:0;">
+      <button class="page-btn active" onclick="askAI()" style="padding:10px 25px; background:var(--accent2); border:none;">Find Movie</button>
     </div>
   </div>
 </div>
