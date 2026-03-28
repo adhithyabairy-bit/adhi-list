@@ -734,8 +734,9 @@
 <script>
 
 // ── TMDB DISCOVER & CREDITS ENGINE ──
-const KEY = 'c1cd3acb5ce781be73da25ba488876c3';
-const API = 'https://api.themoviedb.org/3';
+const KEY  = 'c1cd3acb5ce781be73da25ba488876c3';
+const API  = 'https://api.themoviedb.org/3';
+const GROQ_KEY = ''; // ← Paste your free Groq key here: console.groq.com
 const IMG = 'https://image.tmdb.org/t/p/';
 const LANGS = { telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en' };
 const LANGS_REV = { 'te':'Telugu', 'hi':'Hindi', 'ta':'Tamil', 'ml':'Malayalam', 'kn':'Kannada', 'en':'English' };
@@ -1108,7 +1109,7 @@ async function askAI() {
   const rawInput = inputEl?.value.trim() || '';
   if (!rawInput) return;
 
-  // ── Instant UI feedback ──
+  // ── Instant UI feedback — close modal, show loading grid ──
   openAI();
   aiMatches = [];
   aiMode = true;
@@ -1118,153 +1119,149 @@ async function askAI() {
 
   const status  = document.getElementById('ai-status');
   const chatMsg = document.getElementById('ai-chat-msg');
-  if (status)  status.innerHTML  = '🧠 Thinking...';
-  if (chatMsg) chatMsg.innerHTML = 'Analysing your request...';
+  if (status)  status.innerHTML  = '⚡ AI Processing...';
+  if (chatMsg) chatMsg.innerHTML = 'Getting recommendations from Groq AI...';
+
+  // ── If no Groq key, fall back to smart TMDB search ──
+  if (!GROQ_KEY) {
+    if (status) status.innerHTML = '⚠️ Add your Groq key for AI search.';
+    return _tmdbFallback(rawInput, status, chatMsg);
+  }
 
   try {
-    // ── 1. Normalise query ──
-    const q = rawInput.toLowerCase()
-      .replace(/\b(telgu|telgur|telegu)\b/g, 'telugu')
-      .replace(/\b(hindhi|hndi)\b/g, 'hindi')
-      .replace(/\b(tamizh|tml)\b/g, 'tamil')
-      .replace(/science fiction|sci[ -]fi/g, 'scifi')
-      .replace(/super\s*power|superhero|super\s*hero|superhuman/g, 'superpower');
+    // ── STEP 1: Ask Groq to understand the query (~200-300ms) ──
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_KEY}`,
+        'Content-Type' : 'application/json',
+      },
+      body: JSON.stringify({
+        model      : 'llama-3.1-8b-instant',
+        temperature: 0.2,
+        max_tokens : 300,
+        messages   : [
+          {
+            role   : 'system',
+            content: `You are a world-class movie recommendation AI.
+Given a user query, respond with ONLY a valid JSON object — no markdown, no explanation:
+{"lang":"<code_or_empty>","titles":["Title1","Title2","Title3","Title4","Title5","Title6","Title7","Title8"]}
+Language codes: te=Telugu hi=Hindi ta=Tamil ml=Malayalam kn=Kannada en=English bn=Bengali. Empty string if not specified.
+Pick 6–8 real, well-known movies that perfectly match the query. Use exact, official English movie titles.`
+          },
+          { role: 'user', content: rawInput }
+        ]
+      })
+    });
 
-    // ── 2. Detect language ──
-    const LANGS = {telugu:'te',hindi:'hi',tamil:'ta',malayalam:'ml',kannada:'kn',english:'en',bengali:'bn'};
-    let lang = '';
-    for (const [name, code] of Object.entries(LANGS)) {
-      if (q.includes(name)) { lang = code; break; }
-    }
+    const groqData  = await groqRes.json();
+    const rawText   = groqData.choices?.[0]?.message?.content?.trim() || '{}';
+    // Strip code fences if model wraps in markdown
+    const jsonStr   = rawText.replace(/```json?\s*|\s*```/g, '').trim();
+    const { lang = '', titles = [] } = JSON.parse(jsonStr);
 
-    // ── 3. Mood / concept → genre mapping (the "AI brain") ──
-    const MOOD_GENRE = {
-      // moods
-      inspiring:18, motivating:18, uplifting:18, emotional:18, touching:18,
-      sad:18, depressing:18, dark:80, disturbing:27, scary:27, creepy:27,
-      funny:35, hilarious:35, comedy:35, romantic:10749, love:10749,
-      // themes
-      war:10752, historical:36, history:36, biographical:36, biography:36,
-      space:878, scifi:878, superpower:[14,28], superhero:[14,28],
-      heist:80, crime:80, mystery:9648, suspense:53, thriller:53,
-      adventure:12, action:28, fantasy:14, animation:16, family:10751,
-      drama:18, coming:'of', // handled specially
-    };
-    const moodGenreIds = [];
-    for (const [word, id] of Object.entries(MOOD_GENRE)) {
-      if (q.includes(word) && id !== 'of') {
-        Array.isArray(id) ? moodGenreIds.push(...id) : moodGenreIds.push(id);
-      }
-    }
+    if (!titles.length) throw new Error('Groq returned no titles');
 
-    // ── 4. Detect "like X" / "similar to X" pattern ──
-    const likePattern = /\b(?:like|similar to|same as|as good as|reminds? (?:me )?of)\s+(.+?)(?:\s+(?:movies?|films?)|$)/i;
-    const likeMatch = rawInput.match(likePattern);
-    const refTitle = likeMatch ? likeMatch[1].trim() : '';
+    if (chatMsg) chatMsg.innerHTML = `AI found ${titles.length} picks — fetching from TMDB...`;
 
-    // ── 5. Strip stopwords for keyword search ──
-    const STOP = new Set([
-      'movies','movie','films','film','popular','best','top','latest','new','old',
-      'good','great','watch','find','give','some','the','and','for','with','like',
-      'similar','same','similar','tell','show','want','need','something',
-      'telugu','hindi','tamil','malayalam','kannada','english','bengali',
-      'indian','south','bollywood','hollywood','tollywood','kollywood',
-    ]);
-    // Remove reference title words from keyword search to avoid searching the ref movie itself
-    const refWords = new Set(refTitle.toLowerCase().split(/\s+/));
-    const keywords = q.split(/\s+/)
-      .filter(w => w.length > 2 && !STOP.has(w) && !refWords.has(w))
-      .join(' ').trim();
+    // ── STEP 2: Search TMDB for all titles in parallel (~100-200ms) ──
+    const searches = titles.map(title =>
+      fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(title)}&page=1`)
+        .then(r => r.json())
+        .then(d => d.results?.[0] || null)
+        .catch(() => null)
+    );
 
-    // ── 6. Smart parallel fetch strategy ──
-    const calls = [];
-    let refMovieId = null;
+    const rawMovies = await Promise.all(searches);
+    const valid     = rawMovies.filter(Boolean);
 
-    if (refTitle) {
-      // Step A: Find the reference movie first (single fast lookup)
-      const refData = await fetch(
-        `${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(refTitle)}&page=1`
-      ).then(r => r.json());
+    // Deduplicate
+    const seen = new Set();
+    const unique = valid.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
 
-      refMovieId = refData.results?.[0]?.id;
-
-      if (refMovieId) {
-        // Step B: Get TMDB's official recommendations + similar (fired in parallel)
-        calls.push(fetch(`${API}/movie/${refMovieId}/recommendations?api_key=${KEY}&page=1`).then(r => r.json()));
-        calls.push(fetch(`${API}/movie/${refMovieId}/similar?api_key=${KEY}&page=1`).then(r => r.json()));
-
-        // Also use the reference movie's genres as discover filter
-        const refGenres = refData.results?.[0]?.genre_ids || [];
-        if (refGenres.length || moodGenreIds.length) {
-          const gSet = [...new Set([...refGenres, ...moodGenreIds])].slice(0, 2); // max 2 genres
-          let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=100`;
-          if (lang) dUrl += `&with_original_language=${lang}`;
-          if (gSet.length) dUrl += `&with_genres=${gSet.join(',')}`;
-          calls.push(fetch(dUrl).then(r => r.json()));
-        }
-      }
-    }
-
-    // Keyword search (for non-"like X" queries or as enrichment)
-    if (keywords && !refTitle) {
-      calls.push(fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(keywords)}&page=1`).then(r => r.json()));
-    }
-
-    // Language + genre discover (always run if language is specified)
-    if (lang && !refTitle) {
-      const gSet = [...new Set(moodGenreIds)];
-      let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=100&with_original_language=${lang}`;
-      if (gSet.length) dUrl += `&with_genres=${gSet.join(',')}`;
-      calls.push(fetch(dUrl).then(r => r.json()));
-    }
-
-    // Pure fallback (nothing matched)
-    if (!calls.length) {
-      calls.push(fetch(`${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=500`).then(r => r.json()));
-    }
-
-    // ── 7. Resolve all calls ──
-    const responses = await Promise.all(calls);
-    const allRaw   = responses.flatMap(d => d.results || []);
-
-    // ── 8. Deduplicate ──
-    const seen   = new Set();
-    if (refMovieId) seen.add(refMovieId); // exclude the reference movie itself
-    const unique = allRaw.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
-
-    // ── 9. Language post-filter ──
-    const langFiltered = lang ? unique.filter(m => m.original_language === lang) : unique;
-    const pool = (lang && langFiltered.length >= 3) ? langFiltered : unique;
-
-    // ── 10. Score (social proof + quality) ──
-    aiMatches = pool.map(m => {
-      const mov    = _toMovie(m, lang || m.original_language);
-      const social = Math.min(60, Math.log10((m.vote_count || 1) + 1) * 17);
-      const qual   = (m.vote_average || 0) * 2;
-      mov.aiScore  = Math.min(99, Math.round(social + qual));
+    // ── STEP 3: Map + score (AI order = relevance, vote_count = tiebreaker) ──
+    aiMatches = unique.map((m, i) => {
+      const mov     = _toMovie(m, lang || m.original_language);
+      const aiRank  = Math.max(0, 85 - i * 5);           // top AI pick scores highest
+      const social  = Math.min(14, Math.log10((m.vote_count || 1) + 1) * 4);
+      mov.aiScore   = Math.min(99, Math.round(aiRank + social));
       return mov;
-    }).sort((a, b) => b.aiScore - a.aiScore).slice(0, 28);
+    });
 
     renderGrid();
 
     if (aiMatches.length) {
-      const label = refTitle ? `Movies like <strong>${refTitle}</strong>` : `${aiMatches.length} results found`;
-      if (status)  status.innerHTML  = '✨ Done!';
-      if (chatMsg) chatMsg.innerHTML = label + ` — top pick: <strong>${aiMatches[0].title}</strong>`;
+      if (status)  status.innerHTML  = `✨ Done! ${aiMatches.length} AI picks`;
+      if (chatMsg) chatMsg.innerHTML = `Top recommendation: <strong>${aiMatches[0].title}</strong>`;
     } else {
-      if (status) status.innerHTML = 'No results — try different keywords.';
+      if (status) status.innerHTML = 'No results — try rephrasing.';
       aiMode = false;
       renderGrid();
     }
 
   } catch (e) {
-    console.error('AI error:', e);
-    if (status) status.innerHTML = 'Search failed — check your connection.';
-    aiMode = false;
-    renderGrid();
+    console.error('Groq AI error:', e);
+    if (status) status.innerHTML = 'AI error — falling back to smart search...';
+    _tmdbFallback(rawInput, status, chatMsg);
   }
 }
 
+// ── Fallback: pure TMDB smart search (used when Groq key missing or fails) ──
+async function _tmdbFallback(rawInput, status, chatMsg) {
+  try {
+    const q = rawInput.toLowerCase()
+      .replace(/\b(telgu|telgur|telegu)\b/g, 'telugu')
+      .replace(/science fiction|sci[ -]fi/g, 'scifi')
+      .replace(/super\s*power|superhero/g, 'superpower');
+
+    const LANG_MAP = {telugu:'te',hindi:'hi',tamil:'ta',malayalam:'ml',kannada:'kn',english:'en',bengali:'bn'};
+    let lang = '';
+    for (const [n, c] of Object.entries(LANG_MAP)) { if (q.includes(n)) { lang = c; break; } }
+
+    const STOP = new Set(['movies','movie','films','film','popular','best','top','latest','new',
+      'good','great','watch','find','the','and','for','with','like','similar',
+      'telugu','hindi','tamil','malayalam','kannada','english','bengali','indian','south']);
+    const kw = q.split(/\s+/).filter(w => w.length > 2 && !STOP.has(w)).join(' ').trim();
+
+    const calls = [];
+    if (kw) calls.push(fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(kw)}&page=1`).then(r=>r.json()));
+    if (lang) {
+      const GIDS = {action:28,comedy:35,drama:18,horror:27,thriller:53,scifi:878,fantasy:14,superpower:[14,28]};
+      const gIds = [];
+      for (const [n,id] of Object.entries(GIDS)) { if (q.includes(n)) Array.isArray(id)?gIds.push(...id):gIds.push(id); }
+      let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=100&with_original_language=${lang}`;
+      if (gIds.length) dUrl += `&with_genres=${[...new Set(gIds)].join(',')}`;
+      calls.push(fetch(dUrl).then(r=>r.json()));
+    }
+    if (!calls.length) calls.push(fetch(`${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=500`).then(r=>r.json()));
+
+    const resps = await Promise.all(calls);
+    const allRaw = resps.flatMap(d => d.results || []);
+    const seen = new Set();
+    const pool = (lang ? allRaw.filter(m => m.original_language === lang) : allRaw)
+      .filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+    const src  = pool.length >= 3 ? pool : allRaw.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+
+    aiMatches = src.map(m => {
+      const mov = _toMovie(m, lang || m.original_language);
+      mov.aiScore = Math.min(99, Math.round(Math.log10((m.vote_count||1)+1)*17 + (m.vote_average||0)*2));
+      return mov;
+    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 28);
+
+    renderGrid();
+    if (aiMatches.length) {
+      if (status)  status.innerHTML  = `✨ Found ${aiMatches.length} results!`;
+      if (chatMsg) chatMsg.innerHTML = `Top match: <strong>${aiMatches[0].title}</strong>`;
+    } else {
+      if (status) status.innerHTML = 'No results found.';
+      aiMode = false; renderGrid();
+    }
+  } catch(e) {
+    console.error(e);
+    if (status) status.innerHTML = 'Search failed — check connection.';
+    aiMode = false; renderGrid();
+  }
+}
 
 
 // ── MODAL ──
