@@ -1041,144 +1041,120 @@ async function pickRandom() {
 
 
 // ── AI ENGINE (Zero Cost) ──
+
 function openAI() {
   const c = document.getElementById('ai-chat');
   c.style.display = c.style.display === 'none' ? 'block' : 'none';
   if (c.style.display === 'block') {
     document.getElementById('ai-input').focus();
     document.getElementById('random-result').style.display = 'none';
+    if (!document.getElementById('ai-chat-msg')) {
+       const msg = document.createElement('div');
+       msg.id = 'ai-chat-msg';
+       msg.style = "margin-bottom:15px; font-size:0.9rem; color: #fff; opacity:0.9; line-height:1.5; font-family:'Poppins', sans-serif;";
+       c.insertBefore(msg, document.getElementById('ai-input'));
+    }
   }
 }
+
 
 document.getElementById('ai-input').addEventListener('keypress', e => {
   if (e.key === 'Enter') askAI();
 });
 
-function askAI() {
+
+async function askAI() {
   const input = document.getElementById('ai-input').value.toLowerCase().trim();
   const status = document.getElementById('ai-status');
+  const chatMsg = document.getElementById('ai-chat-msg');
   if (!input) return;
   
-  status.innerHTML = "✨ Analyzing your request against loaded movies...";
+  status.innerHTML = "✨ AI Matchmaker is analyzing your request...";
+  chatMsg.innerHTML = "Thinking...";
+
+  // ── PARAMETER EXTRACTION ──
+  const GENS = {action:28, adventure:12, animation:16, comedy:35, crime:80, drama:18, family:10751, fantasy:14, history:36, horror:27, mystery:9648, romance:10749, 'sci-fi':878, thriller:53, war:10752, western:37};
+  const LGS = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en', hollywood:'en', tollywood:'te', bollywood:'hi'};
   
-  setTimeout(() => {
-    let reqLangs = [];
-    let reqGenres = [];
-    let minRating = 0;
-    let targetYear = null;
-    let reqDub = false;
+  let targetGenres = [];
+  let targetLang = '';
+  let targetYear = (input.match(/\b(19\d{2}|20\d{2})\b/) || [])[0] || '';
+  
+  Object.keys(GENS).forEach(g => { if (input.includes(g)) targetGenres.push(GENS[g]); });
+  Object.keys(LGS).forEach(l => { if (input.includes(l)) targetLang = LGS[l]; });
 
-    let normalizedInput = input.replace(/science fiction|sci fi/g, 'sci-fi')
-                               .replace(/romantic|love story|rom com/g, 'romance')
-                               .replace(/scary|ghost|spooky/g, 'horror')
-                               .replace(/funny|hilarious/g, 'comedy')
-                               .replace(/suspense/g, 'thriller');
-
-    const ALL_LANGS = ['telugu', 'hindi', 'tamil', 'malayalam', 'kannada', 'english'];
-    ALL_LANGS.forEach(l => { if (normalizedInput.includes(l)) reqLangs.push(l); });
-    if (normalizedInput.includes('dub') || normalizedInput.includes('dubbed')) reqDub = true;
-
-    const GENS = ['action', 'comedy', 'thriller', 'drama', 'horror', 'sci-fi', 'romance', 'adventure', 'fantasy', 'mystery', 'crime'];
-    GENS.forEach(g => { if (normalizedInput.includes(g)) reqGenres.push(g); });
-
-    const yMatch = normalizedInput.match(/\b(19\d{2}|20\d{2})\b/);
-    if (yMatch) targetYear = parseInt(yMatch[1]);
-
-    if (normalizedInput.match(/high|top|good|best|great/)) minRating = 7.0;
-    if (normalizedInput.match(/masterpiece|amazing|incredible/)) minRating = 8.0;
-
-    let matches = [];
-    // Enhanced stop words so we only pick up "themes" and "nouns"
-    const stopWords = ['movie','film','movies','films','dubbed','with','from','that','this','show','find','about','like','watching','watch','story','where','some','what'];
-    const qwords = normalizedInput.split(' ').filter(w => w.length > 2 && !GENS.includes(w) && !ALL_LANGS.includes(w) && !stopWords.includes(w));
-
-    MOVIES.forEach(m => {
-      let isMatch = true;
-      // Inject popularity logarithmic boost (max +5 pts) to ensure Blockbusters (like Kalki) beat highly rated unknown indies
-      let popBoost = Math.min(5, Math.log10((m.popularity || 0) + 1) * 1.5);
-      let score = m.rating + popBoost; 
+  try {
+    let results = [];
+    
+    // ── SEARCH STRATEGY ──
+    const isRecommendation = input.includes('recommend') || input.includes('suggest') || input.includes('find') || input.includes('like') || targetGenres.length > 0 || !targetLang;
+    
+    if (isRecommendation && (targetGenres.length || targetLang || targetYear)) {
+      // Use DISCOVER for thematic requests
+      let url = `${API}/discover/movie?api_key=${KEY}&sort_by=popularity.desc&page=1&vote_count.gte=50`;
+      if (targetGenres.length) url += `&with_genres=${targetGenres.join(',')}`;
+      if (targetLang) url += `&with_original_language=${targetLang}`;
+      if (targetYear) url += `&primary_release_year=${targetYear}`;
       
-      if (minRating && m.rating < minRating) isMatch = false;
-      if (targetYear && m.year !== targetYear) isMatch = false;
+      const r = await fetch(url);
+      const d = await r.json();
+      results = d.results || [];
+    } else {
+      // Use SEARCH for everything else (titles, actors, etc)
+      const r = await fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(input)}`);
+      const d = await r.json();
+      results = d.results || [];
+    }
 
-      if (reqLangs.length) {
-        let lMatch = false;
-        reqLangs.forEach(l => {
-          if (m.lang.toLowerCase().includes(l)) lMatch = true;
-          if (m.dubbedLangs && m.dubbedLangs.some(dl => dl.includes(l))) lMatch = true;
-        });
-        if (lMatch) score += 5; else isMatch = false;
-      }
+    if (!results.length) {
+      status.innerHTML = "I couldn't find anything matching that on TMDB. Try different keywords!";
+      chatMsg.innerHTML = "";
+      return;
+    }
 
-      if (reqDub) {
-        if (m.lang.toLowerCase().includes('dub') || (m.dubbedLangs && m.dubbedLangs.length)) score += 5;
-        else isMatch = false;
-      }
-
-      if (reqGenres.length) {
-        let gHit = 0;
-        reqGenres.forEach(rg => {
-          if (m.genres.some(mg => mg.toLowerCase() === rg)) gHit++;
-        });
-        if (gHit === 0) isMatch = false;
-        score += gHit * 4;
-      }
-
-      let keywordHit = 0;
-      let descHits = 0;
-      qwords.forEach(w => {
-        let hit = false;
-        if (m.title.toLowerCase().includes(w)) { score += 10; hit = true; }
-        if (m.director && m.director.toLowerCase().includes(w)) { score += 8; hit = true; }
-        if (m.cast && m.cast.toLowerCase().includes(w)) { score += 6; hit = true; }
-        
-        // Advanced Description "Reading"
-        if (m.desc.toLowerCase().includes(w)) {
-          descHits++;
-          score += 4; // Substantial points for theme matching
-          hit = true;
-        }
-        if (hit) keywordHit++;
-      });
+    // ── PROCESS & SCORE ──
+    aiMatches = results.map(m => {
+      let mov = _toMovie(m, m.original_language);
       
-      // Synergy Bonus: If AI reads multiple thematic keywords in exactly this description, massive multiplier!
-      if (descHits > 1) score += (descHits * 3);
+      // Personalized AI Scoring
+      let score = m.vote_average * 10;
+      if (targetYear && m.release_date && m.release_date.includes(targetYear)) score += 10;
+      if (targetLang && m.original_language === targetLang) score += 15;
       
-      // Strict Constraint: If they gave explicit thematic words (like "time travel", "heist") and NOTHING matched the metadata, it's a fail.
-      if (qwords.length > 0 && keywordHit === 0) {
-        isMatch = false;
-      }
-
-      if (isMatch) matches.push({ m, score: score + Math.random() });
+      let genreHits = (m.genre_ids || []).filter(id => targetGenres.includes(id)).length;
+      score += genreHits * 10;
+      
+      mov.aiScore = Math.min(99, Math.round(score));
+      return mov;
     });
 
-    matches.sort((a,b) => b.score - a.score);
+    aiMatches.sort((a,b) => b.aiScore - a.aiScore);
+    aiMode = true;
+    currentPage = 1;
+    
+    // ── CHAT GPT STYLE RESPONSE ──
+    const count = aiMatches.length;
+    const firstTitle = aiMatches[0].title;
+    const responseTemplates = [
+      `I've analyzed the TMDB database for you. Detailed matches found: ${count}. I highly recommend starting with **${firstTitle}**!`,
+      `Great taste! Based on your request, I found some cinematic gems. **${firstTitle}** seems like your best match.`,
+      `Searching across thousands of titles... 🔍 Done! Here are the best matches. **${firstTitle}** is trending for your criteria right now.`
+    ];
+    
+    chatMsg.innerHTML = responseTemplates[Math.floor(Math.random() * responseTemplates.length)];
+    status.innerHTML = `✨ Top matches populated in the grid below.`;
+    
+    renderGrid();
+    setTimeout(() => {
+      document.getElementById('grid-label').scrollIntoView({ behavior:'smooth', block:'start' });
+    }, 100);
 
-    if (matches.length > 0) {
-      status.innerHTML = `Found ${matches.length} matching movies! Populating grid below.`;
-      
-      aiMode = true;
-      aiMatches = matches.map(item => {
-        let mv = Object.assign({}, item.m);
-        mv.aiScore = Math.min(99, Math.round((item.score/20)*100)); // Cap at 99%
-        return mv;
-      });
-      currentPage = 1;
-      
-      // Close random-result block if open
-      document.getElementById('random-result').style.display = 'none';
-      
-      renderGrid();
-      
-      // Small pause to let DOM render, then scroll
-      setTimeout(() => {
-        document.getElementById('grid-label').scrollIntoView({ behavior:'smooth', block:'start' });
-      }, 50);
-    } else {
-      status.innerHTML = "Hmm, I couldn't find a perfect match for that in the loaded database. Try broader keywords!";
-    }
-  }, 600);
+  } catch (e) {
+    status.innerHTML = "Oops, something went wrong with the AI connection. Please try again.";
+    console.error(e);
+  }
 }
+
 
 // ── MODAL ──
 function openModal(m) {
