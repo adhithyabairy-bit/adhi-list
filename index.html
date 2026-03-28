@@ -759,13 +759,16 @@ function _scrollToLabel() {
 
 // ── CORE: DATA TRANSFORMER & REGISTER ──
 function _toMovie(m, lang = 'en') {
-  // Check if we already have this movie to avoid duplicates & lost references
   let existing = MOVIES.find(x => x.tmdbId === m.id);
-  if (existing) return existing;
-
+  
   let displayLang = lang.includes('_') ? lang.split('_')[1] : (LANGS_REV[m.original_language] || m.original_language.toUpperCase());
   if (lang.startsWith('dubbed_')) displayLang += " Dubbed";
   else if (displayLang[0]) displayLang = displayLang[0].toUpperCase() + displayLang.slice(1);
+
+  if (existing) {
+    if (lang && lang !== 'en') existing.lang = displayLang; // Update language if AI found a regional context
+    return existing;
+  }
 
   const mov = {
     id: _uid++,
@@ -1188,19 +1191,20 @@ async function askAI() {
     let fLang = lang;
     if (!fLang) { for (const [code, reg] of Object.entries(L_EXTRACT)) { if (reg.test(rawInput)) { fLang = code; break; } } }
     
-    // Strict Industry Isolation: Filter out ANY movie from the wrong industry
+    // Strict Industry Isolation: Filter out ANY movie from the wrong industry (Global Fix)
     const pool = (fLang && fLang !== 'en') 
-      ? unique.filter(m => m.original_language === fLang) 
+      ? unique.filter(m => (m.original_language || '').toLowerCase() === fLang.toLowerCase()) 
       : unique;
 
     aiMatches = pool.map((m, i) => {
       const mov     = _toMovie(m, fLang || m.original_language);
-      const isPick  = i < titles.length; // AI picks rank higher
+      const isPick  = i < titles.length; 
       const social  = Math.min(15, Math.log10((m.vote_count || 1) + 1) * 3);
-      mov.aiScore   = Math.min(99, Math.round((isPick ? 80 : 40) + social + (m.vote_average || 0)));
+      mov.aiScore   = Math.min(99, Math.round((isPick ? 85 : 45) + social + (m.vote_average || 0)));
       return mov;
-    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 30);
+    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 40);
 
+    if (label) label.innerText = fLang && fLang !== 'en' ? `AI Results: Verified ${fLang.toUpperCase()} Movies` : `AI Results for "${rawInput}"`;
     renderGrid();
 
     if (aiMatches.length) {
