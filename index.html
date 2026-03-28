@@ -116,8 +116,17 @@
     border-bottom: 1px solid rgba(255,255,255,0.05);
   }
 
-  .nav-spacer { height: 200px; } /* Prevent content from being hidden behind fixed header */
-  @media (max-width: 768px) { .nav-spacer { height: 260px; } }
+
+  .nav-spacer { height: 220px; } /* Generous spacer for fixed header */
+  @media (max-width: 768px) { .nav-spacer { height: 280px; } }
+
+  .ai-chat-bg {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+    z-index: 3000; align-items: center; justify-content: center;
+  }
+  .ai-chat-bg.open { display: flex; }
+
 
 
 
@@ -285,6 +294,18 @@
 
 
 
+
+  #grid-label {
+    grid-column: 1 / -1;
+    font-size: 1.8rem;
+    font-family: 'Bebas Neue', cursive;
+    letter-spacing: 2px;
+    margin-bottom: 0px;
+    color: var(--text);
+    text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    display: flex; align-items: center; gap: 15px;
+    scroll-margin-top: 240px; /* OFFSET FOR FIXED HEADER */
+  }
 
   .spin-btn {
     border: none; border-radius: 12px;
@@ -667,25 +688,21 @@
   </div>
 </div>
 
-
-
-
-
-
-
-
-<!-- AI SECTION -->
-<div class="ai-chat" id="ai-chat" style="display:none; max-width:600px; margin: 0 auto; padding: 24px; background:var(--surface); border:1px solid #2dc65340; border-radius:18px; text-align:left; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); z-index:3001; box-shadow:0 30px 100px rgba(0,0,0,0.9);">
-
-  <button onclick="openAI()" style="position:absolute; top:15px; right:15px; background:none; border:none; color:var(--muted); font-size:1.4rem; cursor:pointer;" title="Close">✕</button>
-  <div style="font-family:'Bebas Neue',sans-serif; font-size:1.6rem; color: #2dc653; margin-bottom: 12px; display:flex; align-items:center; gap:8px;">
-    ✨ AI Movie Matchmaker
+<div class="ai-chat-bg" id="ai-chat-bg">
+  <div class="ai-chat" id="ai-chat" style="max-width:600px; width:90%; padding: 24px; background:var(--surface); border:1px solid #2dc65340; border-radius:18px; text-align:left; position:relative; box-shadow:0 30px 100px rgba(0,0,0,0.9);">
+    <button onclick="openAI()" style="position:absolute; top:15px; right:15px; background:none; border:none; color:var(--muted); font-size:1.4rem; cursor:pointer;" title="Close">✕</button>
+    <div style="font-family:'Bebas Neue',sans-serif; font-size:1.6rem; color: #2dc653; margin-bottom: 12px; display:flex; align-items:center; gap:8px;">
+      ✨ AI Movie Matchmaker
+    </div>
+    <div id="ai-status" style="font-size:0.75rem; color:var(--muted); margin-bottom:15px; letter-spacing:1px; text-transform:uppercase;">Waiting for your query...</div>
+    <div id="ai-chat-msg" style="font-size:0.95rem; line-height:1.5; margin-bottom:20px; color:#ddd; min-height:60px;">Hello! I'm your cinematic assistant. Ask me for movies like "Telugu sci-fi before 2000" or "Dhanush action movies".</div>
+    
+    <div style="display:flex; gap:10px;">
+      <input type="text" id="ai-input" placeholder="Type your movie request..." style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:12px; color:#fff; outline:none; font-family:inherit;">
+      <button class="page-btn active" onclick="askAI()" style="padding:0 25px; background:var(--accent2); border:none;">Find Movie</button>
+    </div>
   </div>
-  <input type="text" id="ai-input" placeholder="Try: 'A highly rated action movie from 2023'" style="width:100%; padding:14px 18px; border-radius:12px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-family:'Poppins',sans-serif; margin-bottom:12px; outline:none; font-size:0.95rem;">
-  <button onclick="askAI()" style="background:#2dc653; color:#fff; border:none; padding:10px 24px; border-radius:100px; font-family:'Poppins',sans-serif; font-weight:600; cursor:pointer;" id="ai-trigger-btn">Find Movie</button>
-  <div id="ai-status" style="margin-top:14px; font-size:0.85rem; color:var(--muted); font-family:'Space Mono', monospace;"></div>
 </div>
-
 
 <!-- RANDOM RESULT -->
 <div id="random-result">
@@ -732,6 +749,12 @@ const _cq = []; // background credits queue
 let _cf = false;
 let _uid = 1;
 
+function _scrollToLabel() {
+  const navHeight = document.getElementById('navbar').offsetHeight;
+  const element = document.getElementById('grid-label');
+  const top = element.getBoundingClientRect().top + window.pageYOffset - navHeight - 20;
+  window.scrollTo({ top, behavior: 'smooth' });
+}
 
 // ── CORE: DATA TRANSFORMER & REGISTER ──
 function _toMovie(m, lang = 'en') {
@@ -1002,7 +1025,7 @@ function goToPage(p) {
   currentPage = p;
   renderGrid();
   // Smooth scroll up to list start
-  document.getElementById('grid-label').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  _scrollToLabel();
 }
 
 
@@ -1057,20 +1080,18 @@ async function pickRandom() {
 
 // ── AI ENGINE (Zero Cost) ──
 
+
 function openAI() {
-  const c = document.getElementById('ai-chat');
-  c.style.display = c.style.display === 'none' ? 'block' : 'none';
-  if (c.style.display === 'block') {
+  const bg = document.getElementById('ai-chat-bg');
+  const isOpen = bg.classList.toggle('open');
+  if (isOpen) {
     document.getElementById('ai-input').focus();
-    document.getElementById('random-result').style.display = 'none';
-    if (!document.getElementById('ai-chat-msg')) {
-       const msg = document.createElement('div');
-       msg.id = 'ai-chat-msg';
-       msg.style = "margin-bottom:15px; font-size:0.9rem; color: #fff; opacity:0.9; line-height:1.5; font-family:'Poppins', sans-serif;";
-       c.insertBefore(msg, document.getElementById('ai-input'));
-    }
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = '';
   }
 }
+
 
 
 document.getElementById('ai-input').addEventListener('keypress', e => {
@@ -1183,14 +1204,14 @@ async function askAI() {
       `Perfect for a movie night. I found these gems ${timeFilter}. **${firstTitle}** is rated highly for this request.`
     ];
     
+
     chatMsg.innerHTML = responseTemplates[Math.floor(Math.random() * responseTemplates.length)];
     status.innerHTML = `✨ Matches populated in the grid below.`;
     
     openAI();
     renderGrid();
-    setTimeout(() => {
-      document.getElementById('grid-label').scrollIntoView({ behavior:'smooth', block:'start' });
-    }, 100);
+    setTimeout(_scrollToLabel, 100);
+
 
   } catch (e) {
     status.innerHTML = "Connection timeout. Please try again.";
