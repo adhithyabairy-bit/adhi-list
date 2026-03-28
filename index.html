@@ -1144,37 +1144,49 @@ async function askAI() {
 
     if (chatMsg) chatMsg.innerHTML = `AI found ${titles.length} picks — fetching from TMDB...`;
 
-    // ── STEP 2: Search TMDB for all titles in parallel (~100-200ms) ──
-    const searches = titles.map(title =>
+    // ── STEP 2: Intelligent Multi-Fetch (~200ms) ──
+    const calls = titles.map(title =>
       fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(title)}&page=1`)
         .then(r => r.json())
         .then(d => {
           if (!d.results?.length) return null;
-          // Global priority: Find result that matches the detected language
           if (lang) {
+            // Priority: Exact native language match
             const exact = d.results.find(res => res.original_language === lang);
             if (exact) return exact;
           }
-          return d.results[0]; // Fallback to most popular
+          return d.results[0];
         })
         .catch(() => null)
     );
 
-    const rawMovies = await Promise.all(searches);
-    const valid     = rawMovies.filter(Boolean);
+    // Also fire a discovery call in parallel if language is detected to ensure "perfect" regional results
+    if (lang) {
+      const gids = {action:28,comedy:35,scifi:878,horror:27,thriller:53,drama:18,fantasy:14};
+      const moodGenres = Object.entries(gids).filter(([k]) => rawInput.toLowerCase().includes(k)).map(e => e[1]).join(',');
+      let discUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&with_original_language=${lang}`;
+      if (moodGenres) discUrl += `&with_genres=${moodGenres}`;
+      calls.push(fetch(discUrl).then(r => r.json()).then(d => d.results || []));
+    }
 
-    // Deduplicate
+    const resps = await Promise.all(calls);
+    const rawMovies = resps.flatMap(r => Array.isArray(r) ? r : [r]).filter(Boolean);
+
+    // Deduplicate & score
     const seen = new Set();
-    const unique = valid.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
+    const unique = rawMovies.filter(m => {
+      if (!m.id || seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
 
-    // ── STEP 3: Map + score (AI order = relevance, vote_count = tiebreaker) ──
     aiMatches = unique.map((m, i) => {
       const mov     = _toMovie(m, lang || m.original_language);
-      const aiRank  = Math.max(0, 85 - i * 5);           // top AI pick scores highest
-      const social  = Math.min(14, Math.log10((m.vote_count || 1) + 1) * 4);
-      mov.aiScore   = Math.min(99, Math.round(aiRank + social));
+      const isPick  = i < titles.length; // Titles from Groq rank higher
+      const social  = Math.log10((m.vote_count || 1) + 1) * 12;
+      mov.aiScore   = Math.min(99, Math.round((isPick ? 75 : 45) + social + (m.vote_average || 0)));
       return mov;
-    });
+    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 30);
 
     renderGrid();
 
