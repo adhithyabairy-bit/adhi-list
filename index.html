@@ -1111,13 +1111,14 @@ async function askAI() {
   chatMsg.innerHTML = "Scanning local database & cloud archives...";
 
 
+
   // 1. EXTRACT FILTERS
   let input = rawInput
     .replace(/telgu|telgur|tlg|telegu/g, 'telugu')
     .replace(/hindhi|hndi|hnd/g, 'hindi')
     .replace(/tamizh|tml|tmil/g, 'tamil')
-    .replace(/scifi|sci-fi|sci fi/g, 'sci-fi')
-    .replace(/superpower|superhero|super power|super hero/g, 'superpower')
+    .replace(/science fiction|scifi|sci-fi|sci fi/g, 'sci-fi') // Added "science fiction"
+    .replace(/superpower|superhero|super power|super hero|super powers/g, 'superpower')
     .replace(/b4|befor/g, 'before')
     .replace(/aftr|aftre/g, 'after')
     .replace(/scary|ghost|spooky/g, 'horror');
@@ -1127,7 +1128,9 @@ async function askAI() {
   
   let targetGenres = [];
   let targetLang = '';
+  let isPopular = input.includes('popular') || input.includes('hit') || input.includes('blockbuster') || input.includes('famous');
   let dateLTE = '', dateGTE = '';
+
   const yMatch = input.match(/\b(19\d{2}|20\d{2})\b/);
   const year = yMatch ? yMatch[1] : null;
 
@@ -1200,16 +1203,21 @@ async function askAI() {
         if (raw && !raw.genre_ids.some(gid => targetGenres.includes(gid))) return false;
       }
       return true;
+
     }).map(m => {
       // ── ACCURATE PERCENTAGE NORMALIZATION (Max 100%) ──
-      let score = Math.min(20, (m.popularity || 0) / 100); // Base popularity weight
-      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 40;
+      // Calculate a base that accounts for blockbusters
+      const popBase = Math.min(25, (m.popularity || 0) / 40); 
+      let score = isPopular ? popBase * 1.5 : popBase; 
+      
+      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 45;
       if (year && m.year === year) score += 10;
-      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 30;
+      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 35;
       
       m.aiScore = Math.min(99, Math.round(score));
       return m;
     }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 16);
+
 
 
 
