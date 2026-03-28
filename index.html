@@ -198,45 +198,14 @@
 
 
 
-  .search-wrap input {
-    width: 100%;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border);
-    color: #fff;
-    padding: 14px 20px 14px 50px;
-    border-radius: 12px;
-    font-family: inherit;
-    font-size: 0.95rem;
-    outline: none;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .search-wrap input:focus {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: var(--accent);
-    box-shadow: 0 0 0 4px rgba(230, 57, 70, 0.15);
-    transform: scale(1.01);
-  }
-
 
   .search-icon {
     position: absolute; left: 18px; top: 50%;
     transform: translateY(-50%);
     opacity: 0.3; font-size: 1.1rem;
+    z-index: 5;
   }
 
-
-  .btn-group {
-    display: flex; gap: 10px;
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    width: 100%;
-    scrollbar-width: none; /* Hide scrollbar Firefox */
-    -ms-overflow-style: none; /* Hide scrollbar IE/Edge */
-    padding-bottom: 4px;
-  }
-  .btn-group::-webkit-scrollbar { display: none; } /* Hide Chrome/Safari */
 
 
 
