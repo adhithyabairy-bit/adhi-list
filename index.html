@@ -1214,15 +1214,21 @@ async function askAI() {
     }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 16);
 
 
+
     if (aiMatches.length === 0) {
       status.innerHTML = "No matches found. Try different keywords!";
     } else {
       status.innerHTML = `✨ AI Found ${aiMatches.length} movies for you!`;
       chatMsg.innerHTML = `I found some great matches like **${aiMatches[0].title}**. Populating your grid now!`;
-      openAI(); // Close modal on success
-      renderGrid();
+      
+      aiMode = true; // CRITICAL: Switch grid to AI mode
+      currentPage = 1; 
+      
+      openAI(); // Close modal
+      renderGrid(); 
       setTimeout(_scrollToLabel, 100);
     }
+
   } catch (e) {
     console.error("AI Error:", e);
     if (!localResults.length) status.innerHTML = "Check your connection and try again!";
