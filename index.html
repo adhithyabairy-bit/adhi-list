@@ -197,22 +197,22 @@
 
 
 
+
   .btn-group {
     display: flex; gap: 10px;
-    justify-content: flex-end;
+    justify-content: flex-start;
     flex-wrap: nowrap;
     overflow-x: auto;
     width: 100%;
     scrollbar-width: none;
     -ms-overflow-style: none;
-    padding-bottom: 4px;
+    padding: 0 5px 10px 5px;
   }
 
-
-
-
-
+  /* Specific Genre buttons hidden on laptop but shown on mobile */
+  .genre-filter { display: none; }
   .btn-group::-webkit-scrollbar { display: none; }
+
 
 
 
@@ -490,11 +490,15 @@
     }
 
 
+
     .filter-btn {
       padding: 8px 20px;
       font-size: 0.75rem;
       border-radius: 100px;
     }
+
+    .genre-filter { display: block !important; }
+
 
 
 
@@ -612,9 +616,11 @@
       <button class="filter-btn" data-filter="kannada">Kannada</button>
       <button class="filter-btn" data-filter="english">Hollywood</button>
       <button class="filter-btn" data-filter="dubbed">Dubbed</button>
-      <button class="filter-btn" data-filter="action">Action</button>
-      <button class="filter-btn" data-filter="sci-fi">Sci-Fi</button>
-      <button class="filter-btn" data-filter="thriller">Thriller</button>
+
+      <button class="filter-btn genre-filter" data-filter="action">Action</button>
+      <button class="filter-btn genre-filter" data-filter="sci-fi">Sci-Fi</button>
+      <button class="filter-btn genre-filter" data-filter="thriller">Thriller</button>
+
     </div>
   </nav>
 </header>
