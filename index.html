@@ -767,11 +767,13 @@ function _toMovie(m, lang = 'en') {
   else if (displayLang[0]) displayLang = displayLang[0].toUpperCase() + displayLang.slice(1);
 
   const mov = {
-    id: _uid++, 
+    id: _uid++,
     tmdbId: m.id,
     title: m.title || m.name || 'Untitled',
     poster: m.poster_path,
     rating: m.vote_average ? m.vote_average.toFixed(1) : '0.0',
+    vote_count: m.vote_count || 0,
+    vote_average: m.vote_average || 0,
     year: m.release_date ? m.release_date.split('-')[0] : 'N/A',
     genres: (m.genre_ids || []).map(id => GMAP[id] || 'Other'),
     lang: displayLang,
@@ -1107,125 +1109,93 @@ async function askAI() {
 
   const status = document.getElementById('ai-status');
   const chatMsg = document.getElementById('ai-chat-msg');
-  status.innerHTML = "🧠 Deep Intelligence Engine Active...";
-  chatMsg.innerHTML = "Crossing-referencing TMDB cloud data with social proof indexes...";
+  status.innerHTML = "🧠 Searching...";
+  chatMsg.innerHTML = "Finding the best matches for you...";
 
-  // 1. ADVANCED NLP NORMALIZATION
-  let input = rawInput.toLowerCase()
-    .replace(/telgu|telgur|tlg|telegu/g, 'telugu')
-    .replace(/hindhi|hndi|hnd/g, 'hindi')
-    .replace(/tamizh|tml|tmil/g, 'tamil')
-    .replace(/science fiction|scifi|sci-fi|sci fi/g, 'sci-fi')
-    .replace(/superpower|superhero|super power|super hero|super powers|superhuman/g, 'superpower')
-    .replace(/b4|befor/g, 'before')
-    .replace(/aftr|aftre/g, 'after')
-    .replace(/indian|south indian|telugu cinema/g, 'telugu');
+  // ── STEP 1: SMART QUERY PARSING (no stopword matching) ──
+  const q = rawInput.toLowerCase()
+    .replace(/science fiction|sci fi|scifi/g, 'scifi')
+    .replace(/super\s*power|superhero|super\s*hero|superhuman/g, 'superpower')
+    .replace(/telgu|telgur|telegu/g, 'telugu')
+    .replace(/hindhi|hndi/g, 'hindi')
+    .replace(/tamizh|tml/g, 'tamil')
+    .replace(/scary|spooky/g, 'horror');
 
-  const GENS = {action:28, adventure:12, animation:16, comedy:35, crime:80, drama:18, family:10751, fantasy:14, history:36, horror:27, mystery:9648, romance:10749, 'sci-fi':878, thriller:53, war:10752, western:37, superpower:[14,28]};
-  const LGS = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en', bengali:'bn'};
-  
-  let targetGenres = [];
-  let targetLang = '';
-  let isPopular = input.includes('popular') || input.includes('hit') || input.includes('blockbuster') || input.includes('famous');
-  let kwId = (input.includes('superpower')) ? '9715|173516' : '';
+  const LANG_CODES = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en', bengali:'bn'};
+  const GENRE_IDS  = {action:28, adventure:12, comedy:35, drama:18, horror:27, romance:10749, thriller:53, scifi:878, fantasy:14, animation:16, crime:80, mystery:9648, family:10751};
 
-  Object.keys(GENS).forEach(g => { 
-    if (input.includes(g)) {
-      if (Array.isArray(GENS[g])) targetGenres.push(...GENS[g]);
-      else targetGenres.push(GENS[g]);
+  let lang = '';
+  let genreIds = [];
+  let kwId = '';
+
+  // Detect language
+  for (const [name, code] of Object.entries(LANG_CODES)) {
+    if (q.includes(name)) { lang = code; break; }
+  }
+
+  // Detect superpower theme first (special case)
+  if (q.includes('superpower')) {
+    kwId = '9715';        // TMDB keyword: superhero
+    genreIds = [14, 28];  // Fantasy + Action
+  } else {
+    for (const [name, id] of Object.entries(GENRE_IDS)) {
+      if (q.includes(name)) genreIds.push(id);
     }
-  });
-  Object.keys(LGS).forEach(l => { if (input.includes(l)) targetLang = LGS[l]; });
+  }
 
-  // 2. PHASE 1: INSTANT LOCAL HYDRATION (0ms)
-  let localResults = MOVIES.filter(m => {
-    const text = (m.title + ' ' + (m.desc||'') + ' ' + m.genres.join(' ')).toLowerCase();
-    return rawInput.toLowerCase().split(' ').every(word => text.includes(word));
-  });
+  // ── STEP 2: CLOSE MODAL FIRST, SHOW SPINNER ──
+  openAI(); // close the dialog so user can see the grid
+  aiMatches = [];
+  aiMode = true;
+  currentPage = 1;
+  renderGrid(); // shows the "Searching database…" spinner
+  setTimeout(_scrollToLabel, 80);
 
-  const localItems = localResults.map(m => {
-    m.aiScore = Math.min(99, 70); 
-    return m;
-  });
+  // ── STEP 3: SINGLE CLEAN TMDB CALL, SORTED BY VOTE COUNT ──
+  try {
+    let url = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=50`;
+    if (lang)          url += `&with_original_language=${lang}`;
+    if (genreIds.length) url += `&with_genres=${[...new Set(genreIds)].join(',')}`;
+    if (kwId)          url += `&with_keywords=${kwId}`;
 
-  if (localItems.length > 0) {
-    aiMatches = [...localItems];
-    aiMode = true; 
-    currentPage = 1;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const results = data.results || [];
+
+    if (!results.length) {
+      // Fallback: plain text search if discover returned nothing
+      const fallback = await fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&page=1`);
+      const fb = await fallback.json();
+      results.push(...(fb.results || []));
+    }
+
+    // ── STEP 4: SCORE & RENDER ──
+    aiMatches = results.map(m => {
+      const mov = _toMovie(m, lang || m.original_language);
+      // Social proof: vote_count dominates scoring
+      const reviewScore = Math.min(60, Math.log10((m.vote_count || 1)) * 15);
+      const ratingScore = (m.vote_average || 0) * 2;
+      mov.aiScore = Math.min(99, Math.round(reviewScore + ratingScore));
+      return mov;
+    }).sort((a, b) => b.aiScore - a.aiScore).slice(0, 28);
+
+    renderGrid();
+
+    if (aiMatches.length) {
+      status.innerHTML = `✨ Found ${aiMatches.length} results!`;
+      chatMsg.innerHTML = `Top match: <strong>${aiMatches[0].title}</strong>`;
+    } else {
+      status.innerHTML = 'No results found. Try simpler keywords.';
+      aiMode = false;
+      renderGrid();
+    }
+  } catch (e) {
+    console.error('AI search error:', e);
+    status.innerHTML = 'Search failed — check your connection.';
+    aiMode = false;
     renderGrid();
   }
-
-  // 3. PHASE 2: TRIPLE-THREAT CLOUD FETCH (Discovery + Text Search + Priority Keywords)
-  try {
-    const discoUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=50` +
-      (targetGenres.length ? `&with_genres=${targetGenres.join(',')}` : "") +
-      (targetLang ? `&with_original_language=${targetLang}` : "") +
-      (kwId ? `&with_keywords=${kwId}` : "");
-    
-    // Direct Semantic Search (The 'Google-like' Fix)
-    const searchUrl = `${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&include_adult=false&page=1`;
-    
-    const [discoData, searchData] = await Promise.all([
-      fetch(discoUrl).then(r => r.json()),
-      fetch(searchUrl).then(r => r.json())
-    ]);
-    
-    const rawCloud = [...(discoData.results || []), ...(searchData.results || [])];
-    const apiMatches = rawCloud.map(m => _toMovie(m, targetLang || m.original_language));
-    
-    // 4. ELITE SCORING (SOCIAL PROOF DOMINANCE)
-    const allMatches = [...localItems, ...apiMatches];
-    const uniqueMap = new Map();
-    allMatches.forEach(m => uniqueMap.set(m.tmdbId || m.id, m));
-
-    aiMatches = Array.from(uniqueMap.values()).map(m => {
-      // Review Count (Vote Count) Weighting is now 10x more powerful (Social Proof)
-      const reviewWeight = Math.min(50, Math.log10((m.vote_count || 0) + 1) * 10);
-      const ratingWeight = (m.vote_average || 0) * 1.5;
-      const trendingWeight = Math.min(10, (m.popularity || 0) / 100);
-      
-      let score = reviewWeight + ratingWeight + trendingWeight;
-      const fullText = (m.title + ' ' + (m.desc||'')).toLowerCase();
-      
-      // Hard Injection for Blockbusters
-      if (input.includes('superpower')) {
-        if (fullText.includes('hanuman') || fullText.includes('kalki')) score += 70; 
-        if (fullText.includes('superhero') || fullText.includes('superhuman')) score += 40;
-      }
-      
-      // Language & Genre Alignment
-      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 45;
-      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 35;
-      if (isPopular) score += 20;
-      
-      // Freshness Filter
-      if (m.year < 2010 && input.includes('new')) score -= 40;
-      if (m.year > 2024 && (m.vote_count || 0) < 5) score -= 60; // Ditch placeholders
-
-      m.aiScore = Math.min(99, Math.round(score));
-      return m;
-    })
-    .sort((a,b) => b.aiScore - a.aiScore)
-    .slice(0, 32);
-
-    if (aiMatches.length > 0) {
-      status.innerHTML = `✨ Deep Scan Completed!`;
-      chatMsg.innerHTML = `I found **${aiMatches[0].title}** for you! Sorting by social rankings...`;
-      aiMode = true;
-      currentPage = 1;
-      renderGrid();
-      setTimeout(_scrollToLabel, 100);
-      setTimeout(openAI, 2000); 
-    } else if (!localItems.length) {
-      status.innerHTML = "No matches found in library or cloud.";
-    }
-  } catch (e) { 
-    console.error("AI System Failure:", e);
-    if (!aiMatches.length) status.innerHTML = "Intelligence offline. Check connection!";
-  }
 }
-
-
 
 
 // ── MODAL ──
