@@ -1100,64 +1100,60 @@ document.getElementById('ai-input').addEventListener('keypress', e => {
 
 
 
+
 async function askAI() {
   const rawInput = document.getElementById('ai-input').value.toLowerCase().trim();
   const status = document.getElementById('ai-status');
   const chatMsg = document.getElementById('ai-chat-msg');
   if (!rawInput) return;
   
-  status.innerHTML = "✨ AI Matchmaker is analyzing your request...";
-  chatMsg.innerHTML = "Deep scanning movie titles & metadata...";
+  status.innerHTML = "✨ AI Matchmaker is analyzing...";
+  chatMsg.innerHTML = "Scanning local database & cloud archives...";
 
-  const genreMatches = {
-    'action': 28, 'adventure': 12, 'animation': 16, 'comedy': 35, 'crime': 80,
-    'documentary': 99, 'drama': 18, 'family': 10751, 'fantasy': 14, 'history': 36,
-    'horror': 27, 'music': 10402, 'mystery': 9648, 'romance': 10749, 'sci-fi': 878,
-    'scifi': 878, 'science fiction': 878, 'thriller': 53, 'war': 10752, 'western': 37,
-    'superhero': 14, 'superpower': 14, 'super power': 14, 'super hero': 14, 'marvel': 28, 'dc': 28,
-    'ghost': 27, 'spirit': 27, 'magic': 14, 'scary': 27, 'funny': 35, 'kid': 10751, 'animation': 16,
-    'love': 10749, 'biography': 36, 'historical': 36, 'fighting': 28, 'suspense': 53
-  };
-
-  // ── SUPER-ROBUST SPELLING & INTENT MAP ──
+  // 1. EXTRACT FILTERS
   let input = rawInput
+    .replace(/telgu|telgur|tlg|telegu/g, 'telugu')
+    .replace(/hindhi|hndi|hnd/g, 'hindi')
+    .replace(/tamizh|tml|tmil/g, 'tamil')
+    .replace(/scifi|sci-fi|sci fi/g, 'sci-fi')
+    .replace(/superpower|superhero/g, 'superpower')
+    .replace(/b4|befor/g, 'before')
+    .replace(/aftr|aftre/g, 'after');
+
   const GENS = {action:28, adventure:12, animation:16, comedy:35, crime:80, drama:18, family:10751, fantasy:14, history:36, horror:27, mystery:9648, romance:10749, 'sci-fi':878, thriller:53, war:10752, western:37};
   const LGS = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en'};
   
   let targetGenres = [];
   let targetLang = '';
-  // Time-based ranges
-  let dateLTE = '';
-  let dateGTE = '';
+  let dateLTE = '', dateGTE = '';
   const yMatch = input.match(/\b(19\d{2}|20\d{2})\b/);
   const year = yMatch ? yMatch[1] : null;
 
   if (year) {
-    if (input.includes('before') || input.includes('until') || input.includes('older than')) {
-      dateLTE = `${year}-01-01`;
-    } else if (input.includes('after') || input.includes('since') || input.includes('newer than')) {
-      dateGTE = `${year}-12-31`;
-    } else {
-      dateGTE = `${year}-01-01`;
-      dateLTE = `${year}-12-31`;
-    }
-  } else if (input.includes('old') || input.includes('classic') || input.includes('retro')) {
-    dateLTE = '2000-01-01'; // Default threshold for classic
-  } else if (input.includes('new') || input.includes('latest') || input.includes('recent')) {
-    dateGTE = '2020-01-01';
+    if (input.includes('before')) dateLTE = `${year}-01-01`;
+    else if (input.includes('after')) dateGTE = `${year}-12-31`;
+    else { dateGTE = `${year}-01-01`; dateLTE = `${year}-12-31`; }
   }
-
   Object.keys(GENS).forEach(g => { if (input.includes(g)) targetGenres.push(GENS[g]); });
   Object.keys(LGS).forEach(l => { if (input.includes(l)) targetLang = LGS[l]; });
+  
+  // ── INSTANT LOCAL SEARCH ──
+  let localResults = MOVIES.filter(m => {
+    const text = (m.title + ' ' + m.desc + ' ' + m.genres.join(' ')).toLowerCase();
+    return rawInput.split(' ').every(word => text.includes(word));
+  });
+
+  if (localResults.length > 0) {
+    aiMatches = localResults.slice(0, 16);
+    renderGrid();
+    setTimeout(_scrollToLabel, 50);
+    status.innerHTML = `Found ${localResults.length} instant matches! Updating with cloud data...`;
+  }
 
   try {
-    let results = [];
-    
-
-    // ── HIGH-SPEED FETCH WRAPPER ──
     async function _fastFetch(url) {
       const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 2000); 
+      const tid = setTimeout(() => ctrl.abort(), 1200); 
       try {
         const r = await fetch(url, { signal: ctrl.signal });
         clearTimeout(tid);
@@ -1165,84 +1161,44 @@ async function askAI() {
       } catch(e) { return { results: [] }; }
     }
 
-    // DISCOVERY (Fast filters)
-    let url = `${API}/discover/movie?api_key=${KEY}&sort_by=popularity.desc&page=1&vote_count.gte=10`;
-    if (targetGenres.length) url += `&with_genres=${targetGenres.join(',')}`;
-    if (targetLang) url += `&with_original_language=${targetLang}`;
-    if (dateLTE) url += `&release_date.lte=${dateLTE}`;
-    if (dateGTE) url += `&release_date.gte=${dateGTE}`;
-    
-    // SEARCH (Keywords e.g. "superpower")
+    const discoUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=popularity.desc&page=1` +
+      (targetGenres.map(g => `&with_genres=${g}`).join(',')) +
+      (targetLang ? `&with_original_language=${targetLang}` : "") +
+      (dateLTE ? `&release_date.lte=${dateLTE}` : "") +
+      (dateGTE ? `&release_date.gte=${dateGTE}` : "");
     const searchUrl = `${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&page=1`;
 
-    // Strategy: Try Discovery first, if results are low, merge with Search. Race them if possible.
-    const [discoData, searchData] = await Promise.all([
-      _fastFetch(url),
-      rawInput.length > 3 ? _fastFetch(searchUrl) : Promise.resolve({results:[]})
+    const [dData, sData] = await Promise.all([
+      _fastFetch(discoUrl),
+      input.length > 3 ? _fastFetch(searchUrl) : Promise.resolve({results:[]})
     ]);
     
-    results = [...(discoData.results || []), ...(searchData.results || [])];
-
-
-    // Deduplicate by TMDB ID
+    const apiResults = [...(dData.results || []), ...(sData.results || [])];
+    const combined = [...localResults, ...apiResults.map(m => _toMovie(m, targetLang || 'en'))];
     const uniqueMap = new Map();
-    results.forEach(m => uniqueMap.set(m.id, m));
-    results = Array.from(uniqueMap.values());
+    combined.forEach(m => uniqueMap.set(m.tmdbId || m.id, m));
+    
+    aiMatches = Array.from(uniqueMap.values()).map(m => {
+      let score = m.popularity || 0;
+      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 1000;
+      if (year && m.year === year) score += 500;
+      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 800;
+      m.aiScore = score;
+      return m;
+    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 16);
 
-    // ── STRICT ACCURACY FILTERING ──
-    if (targetGenreId) {
-      results = results.filter(m => {
-        const hasGenre = m.genre_ids?.includes(targetGenreId);
-        // Robust keyword check in description if genre is horror (Scary)
-        if (targetGenreId === 27 && m.overview?.toLowerCase().match(/horror|scary|ghost|creepy|terrifying|demon|evil/)) return true;
-        return hasGenre;
-      });
+    if (aiMatches.length === 0) {
+      status.innerHTML = "No matches found. Try different keywords!";
+    } else {
+      status.innerHTML = `✨ AI Found ${aiMatches.length} movies for you!`;
+      chatMsg.innerHTML = `I found some great matches like **${aiMatches[0].title}**. Populating your grid now!`;
+      openAI(); // Close modal on success
+      renderGrid();
+      setTimeout(_scrollToLabel, 100);
     }
-
-    if (!results.length) {
-      status.innerHTML = "I couldn't find any perfect matches in our database for those specific criteria. Try broadening your keywords!";
-      chatMsg.innerHTML = "No results found. Maybe try a different genre or time period?";
-      return;
-    }
-
-    aiMatches = results.map(m => {
-      let mov = _toMovie(m, m.original_language);
-      let score = m.vote_average * 8;
-      if (year && m.release_date && m.release_date.includes(year)) score += 20;
-      if (targetLang && m.original_language === targetLang) score += 15;
-      let genreHits = (m.genre_ids || []).filter(id => targetGenres.includes(id)).length;
-      score += genreHits * 12;
-      if (targetGenreId && m.genre_ids?.includes(targetGenreId)) score += 50; // HEAVY GENRE BOOST
-      mov.aiScore = Math.min(99, Math.round(score + (m.popularity / 50)));
-      return mov;
-    });
-
-    aiMatches.sort((a,b) => b.aiScore - a.aiScore);
-    aiMode = true;
-    currentPage = 1;
-    
-    const count = aiMatches.length;
-    const firstTitle = aiMatches[0].title;
-    const timeFilter = year ? (dateLTE ? `from before ${year}` : (dateGTE ? `since ${year}` : `from ${year}`)) : "across periods";
-    
-    const responseTemplates = [
-      `Searching historical archives... 🔍 Found ${count} films ${timeFilter}. You should check out **${firstTitle}**!`,
-      `Great request! I analyzed the ${timeFilter} records. **${firstTitle}** is a strong match for you.`,
-      `Perfect for a movie night. I found these gems ${timeFilter}. **${firstTitle}** is rated highly for this request.`
-    ];
-    
-
-    chatMsg.innerHTML = responseTemplates[Math.floor(Math.random() * responseTemplates.length)];
-    status.innerHTML = `✨ Matches populated in the grid below.`;
-    
-    openAI();
-    renderGrid();
-    setTimeout(_scrollToLabel, 100);
-
-
   } catch (e) {
-    status.innerHTML = "Connection timeout. Please try again.";
-    console.error(e);
+    console.error("AI Error:", e);
+    if (!localResults.length) status.innerHTML = "Check your connection and try again!";
   }
 }
 
