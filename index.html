@@ -683,6 +683,7 @@
 </footer>
 
 <script>
+
 // ── TMDB DISCOVER & CREDITS ENGINE ──
 const KEY = 'c1cd3acb5ce781be73da25ba488876c3';
 const API = 'https://api.themoviedb.org/3';
@@ -699,27 +700,30 @@ const _cq = []; // background credits queue
 let _cf = false;
 let _uid = 1;
 
-function _toMovie(m, lang) {
-  let displayLang = lang[0].toUpperCase() + lang.slice(1);
-  if (lang.startsWith('dubbed_')) {
-    const lPart = lang.split('_')[1];
-    displayLang = lPart[0].toUpperCase() + lPart.slice(1) + " Dubbed";
-  }
+// ── CORE: DATA TRANSFORMER ──
+function _toMovie(m, lang = 'en') {
+  let displayLang = lang.includes('_') ? lang.split('_')[1] : (LANGS_REV[m.original_language] || m.original_language.toUpperCase());
+  if (lang.startsWith('dubbed_')) displayLang += " Dubbed";
+  else if (displayLang[0]) displayLang = displayLang[0].toUpperCase() + displayLang.slice(1);
 
   const mov = {
-    id: _uid++, tmdbId: m.id,
-    title: m.title || m.name || 'Unknown',
-    year: m.release_date ? +m.release_date.slice(0,4) : 0,
+    id: _uid++, 
+    tmdbId: m.id,
+    title: m.title || m.name || 'Untitled',
+    poster: m.poster_path,
+    rating: m.vote_average ? m.vote_average.toFixed(1) : '0.0',
+    year: m.release_date ? m.release_date.split('-')[0] : 'N/A',
+    genres: (m.genre_ids || []).map(id => GMAP[id] || 'Other'),
     lang: displayLang,
-    genres: (m.genre_ids||[]).map(id=>GMAP[id]).filter(Boolean),
-    rating: Math.round(m.vote_average * 10) / 10,
     popularity: m.popularity || 0,
-    desc: m.overview || '',
-    poster: m.poster_path || null,
+    desc: m.overview || 'No description available.',
+    isNative: !lang.startsWith('dubbed_'),
+    dubbedLangs: lang.startsWith('dubbed_') ? [lang] : [],
     director: '',
     cast: ''
   };
-  _cq.push(mov); // Queue up to fetch cast/director
+  
+  _cq.push(mov);
   if (!_cf) _processCreditsQ();
   return mov;
 }
@@ -737,7 +741,6 @@ async function _processCreditsQ() {
         const topCast = d.cast.slice(0, 4).map(c => c.name);
         m.cast = topCast.join(', ');
         
-        // If user is actively searching for this newly loaded director/cast, re-render to pop it in
         if (searchQuery && (
           (m.director && m.director.toLowerCase().includes(searchQuery.toLowerCase())) ||
           (m.cast && m.cast.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -746,26 +749,18 @@ async function _processCreditsQ() {
         }
       }
     } catch(e) {}
-    await new Promise(r => setTimeout(r, 45)); // ~22 req/s to avoid TMDB block (limit is ~40)
+    await new Promise(r => setTimeout(r, 45)); 
   }
   _cf = false;
-  if (searchQuery) {
-    debouncedRender();
-  } else {
-    updateStats();
-  }
+  updateStats();
 }
 
 async function _fetchPage(lang, page) {
   try {
     let url = `${API}/discover/movie?api_key=${KEY}&sort_by=popularity.desc&page=${page}&vote_count.gte=5`;
-    let catName = lang;
-    
     if (lang.startsWith('dubbed_')) {
       const baseLang = lang.split('_')[1];
-      // Fetch ANY language movie legally translated to this dubbed region (includes Tamil/Hindi pan-Indian hits)
       url += `&with_translated_languages=${LANGS[baseLang]}`;
-      catName = baseLang[0].toUpperCase() + baseLang.slice(1) + ' Dubbed';
     } else {
       url += `&with_original_language=${LANGS[lang]}`;
     }
@@ -775,42 +770,23 @@ async function _fetchPage(lang, page) {
     if (!d.results) return 0;
 
     d.results.forEach(m => {
-      // Prevent tagging a native movie as "Dubbed" in its own language!
-      let isNativeToDub = false;
-      if (lang.startsWith('dubbed_')) {
-        const bLang = lang.split('_')[1];
-        if (m.original_language === LANGS[bLang]) isNativeToDub = true;
-      }
-      
-      if (isNativeToDub) return; // Completely ignore. It belongs only in its native tab.
+      // Ignore if native movie shows up in dubbed list
+      if (lang.startsWith('dubbed_') && m.original_language === LANGS[lang.split('_')[1]]) return;
 
       if (!_seen.has(m.id)) { 
         _seen.add(m.id); 
-        const mov = _toMovie(m, lang);
-        if (lang.startsWith('dubbed_')) {
-          mov.dubbedLangs = [lang];
-          mov.isDubbedOnly = true; 
-          mov.lang = (LANGS_REV[m.original_language] || m.original_language.toUpperCase());
-        } else {
-          mov.isNative = true;
-        }
-        MOVIES.push(mov); 
+        MOVIES.push(_toMovie(m, lang)); 
       } else {
         const existing = MOVIES.find(x => x.tmdbId === m.id);
-        if (existing) {
-          if (lang.startsWith('dubbed_')) {
-            if (!existing.dubbedLangs) existing.dubbedLangs = [];
-            if (!existing.dubbedLangs.includes(lang)) existing.dubbedLangs.push(lang);
-          } else {
-            existing.isNative = true; // Promoted from dubbed-only to native
-          }
+        if (existing && lang.startsWith('dubbed_')) {
+          if (!existing.dubbedLangs.includes(lang)) existing.dubbedLangs.push(lang);
         }
       }
-
     });
     return d.total_pages || 0;
   } catch(e) { return 0; }
 }
+
 
 async function _loadLang(lang) {
   if (_loading.has(lang)) return;
