@@ -1094,57 +1094,41 @@ function openAI() {
 
 
 
-document.getElementById('ai-input').addEventListener('keypress', e => {
+
+
+document.getElementById('ai-input')?.addEventListener('keypress', e => {
   if (e.key === 'Enter') askAI();
 });
 
-
-
-
 async function askAI() {
-  const rawInput = document.getElementById('ai-input').value.toLowerCase().trim();
+  const inputEl = document.getElementById('ai-input');
+  const rawInput = inputEl?.value.trim() || '';
+  if (!rawInput) return;
+
   const status = document.getElementById('ai-status');
   const chatMsg = document.getElementById('ai-chat-msg');
-  if (!rawInput) return;
-  
-  status.innerHTML = "✨ AI Matchmaker is analyzing...";
-  chatMsg.innerHTML = "Scanning local database & cloud archives...";
+  status.innerHTML = "🧠 Deep Intelligence Engine Active...";
+  chatMsg.innerHTML = "Crossing-referencing TMDB cloud data with social proof indexes...";
 
-
-
-
-  // 1. EXTRACT FILTERS
-  let input = rawInput
+  // 1. ADVANCED NLP NORMALIZATION
+  let input = rawInput.toLowerCase()
     .replace(/telgu|telgur|tlg|telegu/g, 'telugu')
     .replace(/hindhi|hndi|hnd/g, 'hindi')
     .replace(/tamizh|tml|tmil/g, 'tamil')
     .replace(/science fiction|scifi|sci-fi|sci fi/g, 'sci-fi')
-    .replace(/superpower|superhero|super power|super hero|super powers/g, 'superpower')
     .replace(/superpower|superhero|super power|super hero|super powers|superhuman/g, 'superpower')
     .replace(/b4|befor/g, 'before')
     .replace(/aftr|aftre/g, 'after')
-    .replace(/scary|ghost|spooky/g, 'horror')
-    .replace(/indian|south indian|telugu cinema/g, 'indian');
+    .replace(/indian|south indian|telugu cinema/g, 'telugu');
 
   const GENS = {action:28, adventure:12, animation:16, comedy:35, crime:80, drama:18, family:10751, fantasy:14, history:36, horror:27, mystery:9648, romance:10749, 'sci-fi':878, thriller:53, war:10752, western:37, superpower:[14,28]};
   const LGS = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en', bengali:'bn'};
   
   let targetGenres = [];
   let targetLang = '';
-  let isPopular = input.includes('popular') || input.includes('hit') || input.includes('blockbuster') || input.includes('famous') || input.includes('best');
-  let dateLTE = '', dateGTE = '';
+  let isPopular = input.includes('popular') || input.includes('hit') || input.includes('blockbuster') || input.includes('famous');
+  let kwId = (input.includes('superpower')) ? '9715|173516' : '';
 
-
-  const yMatch = input.match(/\b(19\d{2}|20\d{2})\b/);
-  const year = yMatch ? yMatch[1] : null;
-
-  if (year) {
-    if (input.includes('before')) dateLTE = `${year}-01-01`;
-    else if (input.includes('after')) dateGTE = `${year}-12-31`;
-    else { dateGTE = `${year}-01-01`; dateLTE = `${year}-12-31`; }
-  }
-
-  // Smart Genre Extraction (Supports Arrays like superpower -> [14,28])
   Object.keys(GENS).forEach(g => { 
     if (input.includes(g)) {
       if (Array.isArray(GENS[g])) targetGenres.push(...GENS[g]);
@@ -1153,129 +1137,94 @@ async function askAI() {
   });
   Object.keys(LGS).forEach(l => { if (input.includes(l)) targetLang = LGS[l]; });
 
-  
-  // ── INSTANT LOCAL SEARCH ──
+  // 2. PHASE 1: INSTANT LOCAL HYDRATION (0ms)
   let localResults = MOVIES.filter(m => {
-    const text = (m.title + ' ' + m.desc + ' ' + m.genres.join(' ')).toLowerCase();
-    return rawInput.split(' ').every(word => text.includes(word));
+    const text = (m.title + ' ' + (m.desc||'') + ' ' + m.genres.join(' ')).toLowerCase();
+    return rawInput.toLowerCase().split(' ').every(word => text.includes(word));
   });
 
-  if (localResults.length > 0) {
-    aiMatches = localResults.slice(0, 16);
+  const localItems = localResults.map(m => {
+    m.aiScore = Math.min(99, 70); 
+    return m;
+  });
+
+  if (localItems.length > 0) {
+    aiMatches = [...localItems];
+    aiMode = true; 
+    currentPage = 1;
     renderGrid();
-    setTimeout(_scrollToLabel, 50);
-    status.innerHTML = `Found ${localResults.length} instant matches! Updating with cloud data...`;
   }
 
+  // 3. PHASE 2: TRIPLE-THREAT CLOUD FETCH (Discovery + Text Search + Priority Keywords)
   try {
-    async function _fastFetch(url) {
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), 3000); // 3s Timeout (More resilient)
-      try {
-        const r = await fetch(url, { signal: ctrl.signal });
-        clearTimeout(tid);
-        return await r.json();
-      } catch(e) { return { results: [] }; }
-    }
-
-    const discoUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=popularity.desc&page=1&vote_count.gte=50` +
-      (targetGenres.map(g => `&with_genres=${g}`).join(',')) +
+    const discoUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=50` +
+      (targetGenres.length ? `&with_genres=${targetGenres.join(',')}` : "") +
       (targetLang ? `&with_original_language=${targetLang}` : "") +
-      (keywordId ? `&with_keywords=${keywordId}` : "") + 
-      (dateLTE ? `&release_date.lte=${dateLTE}` : "") +
-      (dateGTE ? `&release_date.gte=${dateGTE}` : "");
-    const searchUrl = `${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&page=1`;
-
-    // ── TURBO-STRATEGY: RACE FOR FIRST RESULTS ──
-    let apiResults = [];
-    const discoPromise = _fastFetch(discoUrl);
-    const searchPromise = input.length > 3 ? _fastFetch(searchUrl) : Promise.resolve({results:[]});
-
-    const dData = await discoPromise; // Discovery is usually faster & more accurate
-    apiResults = dData.results || [];
-
-    // Only wait for search if discovery is lean
-    if (apiResults.length < 8) {
-      const sData = await searchPromise;
-      apiResults = [...apiResults, ...(sData.results || [])];
-    }
+      (kwId ? `&with_keywords=${kwId}` : "");
     
-
-    const combined = [...localResults, ...apiResults.map(m => _toMovie(m, targetLang || m.original_language))];
+    // Direct Semantic Search (The 'Google-like' Fix)
+    const searchUrl = `${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(rawInput)}&include_adult=false&page=1`;
+    
+    const [discoData, searchData] = await Promise.all([
+      fetch(discoUrl).then(r => r.json()),
+      fetch(searchUrl).then(r => r.json())
+    ]);
+    
+    const rawCloud = [...(discoData.results || []), ...(searchData.results || [])];
+    const apiMatches = rawCloud.map(m => _toMovie(m, targetLang || m.original_language));
+    
+    // 4. ELITE SCORING (SOCIAL PROOF DOMINANCE)
+    const allMatches = [...localItems, ...apiMatches];
     const uniqueMap = new Map();
-    combined.forEach(m => uniqueMap.set(m.tmdbId || m.id, m));
-    
+    allMatches.forEach(m => uniqueMap.set(m.tmdbId || m.id, m));
 
-    aiMatches = Array.from(uniqueMap.values()).filter(m => {
-      if (targetLang && m.tmdbId) {
-        const raw = apiResults.find(a => a.id === m.tmdbId);
-        if (raw && raw.original_language !== targetLang) return false;
-      }
-      if (targetGenres.length && m.tmdbId) {
-        const raw = apiResults.find(a => a.id === m.tmdbId);
-        if (raw && !raw.genre_ids.some(gid => targetGenres.includes(gid))) return false;
-      }
-      return true;
-
-
-
-
-    }).map(m => {
-      // ── ADVANCED THEMATIC & SOCIAL PROOF SCORING (Max 100%) ──
-      const reviewWeight = Math.min(30, Math.log10((m.vote_count || 0) + 1) * 7);
+    aiMatches = Array.from(uniqueMap.values()).map(m => {
+      // Review Count (Vote Count) Weighting is now 10x more powerful (Social Proof)
+      const reviewWeight = Math.min(50, Math.log10((m.vote_count || 0) + 1) * 10);
+      const ratingWeight = (m.vote_average || 0) * 1.5;
       const trendingWeight = Math.min(10, (m.popularity || 0) / 100);
-      const ratingWeight = (m.vote_average || 0) * 2;
-
-      let score = reviewWeight + trendingWeight + ratingWeight;
       
-      // Theme Detection: Super Power specific boost
+      let score = reviewWeight + ratingWeight + trendingWeight;
+      const fullText = (m.title + ' ' + (m.desc||'')).toLowerCase();
+      
+      // Hard Injection for Blockbusters
       if (input.includes('superpower')) {
-        const fullText = (m.title + ' ' + m.desc).toLowerCase();
-        // Hanu-man & Superhero specific semantic matches
-        if (fullText.includes('hanuman')) score += 50; 
-        if (fullText.includes('superhero') || fullText.includes('supernatural') || fullText.includes('divine power')) score += 40;
+        if (fullText.includes('hanuman') || fullText.includes('kalki')) score += 70; 
+        if (fullText.includes('superhero') || fullText.includes('superhuman')) score += 40;
       }
-
-      if (isPopular) score += (reviewWeight * 0.5); 
-
-      // Strict Matches
-      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 45;
-      if (year && m.year === year) score += 10;
-      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 35;
       
-      // Future Movie Penalty
-      if (m.year > 2025 && (m.vote_count || 0) < 50) score -= 60;
+      // Language & Genre Alignment
+      if (targetLang && m.lang?.toLowerCase().includes(targetLang)) score += 45;
+      if (targetGenres.some(g => m.genres.includes(GMAP[g]))) score += 35;
+      if (isPopular) score += 20;
+      
+      // Freshness Filter
+      if (m.year < 2010 && input.includes('new')) score -= 40;
+      if (m.year > 2024 && (m.vote_count || 0) < 5) score -= 60; // Ditch placeholders
 
       m.aiScore = Math.min(99, Math.round(score));
       return m;
-    }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 16);
+    })
+    .sort((a,b) => b.aiScore - a.aiScore)
+    .slice(0, 32);
 
-
-
-
-
-
-
-
-    if (aiMatches.length === 0) {
-      status.innerHTML = "No matches found. Try different keywords!";
-    } else {
-      status.innerHTML = `✨ AI Found ${aiMatches.length} movies for you!`;
-      chatMsg.innerHTML = `I found some great matches like **${aiMatches[0].title}**. Populating your grid now!`;
-      
-      aiMode = true; // CRITICAL: Switch grid to AI mode
-      currentPage = 1; 
-      
-      openAI(); // Close modal
-      renderGrid(); 
+    if (aiMatches.length > 0) {
+      status.innerHTML = `✨ Deep Scan Completed!`;
+      chatMsg.innerHTML = `I found **${aiMatches[0].title}** for you! Sorting by social rankings...`;
+      aiMode = true;
+      currentPage = 1;
+      renderGrid();
       setTimeout(_scrollToLabel, 100);
+      setTimeout(openAI, 2000); 
+    } else if (!localItems.length) {
+      status.innerHTML = "No matches found in library or cloud.";
     }
-
-  } catch (e) {
-    console.error("AI Error:", e);
-    if (!localResults.length) status.innerHTML = "Check your connection and try again!";
+  } catch (e) { 
+    console.error("AI System Failure:", e);
+    if (!aiMatches.length) status.innerHTML = "Intelligence offline. Check connection!";
   }
 }
+
 
 
 
