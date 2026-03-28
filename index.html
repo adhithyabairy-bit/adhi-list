@@ -1129,36 +1129,16 @@ async function askAI() {
   }
 
   try {
-    // ── STEP 1: Ask Groq to understand the query (~200-300ms) ──
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    // ── STEP 1: Ask Groq (Secure Proxy) ──
+    const proxyRes = await fetch('/api/ask', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_KEY}`,
-        'Content-Type' : 'application/json',
-      },
-      body: JSON.stringify({
-        model      : 'llama-3.1-8b-instant',
-        temperature: 0.2,
-        max_tokens : 300,
-        messages   : [
-          {
-            role   : 'system',
-            content: `You are a world-class movie recommendation AI.
-Given a user query, respond with ONLY a valid JSON object — no markdown, no explanation:
-{"lang":"<code_or_empty>","titles":["Title1","Title2","Title3","Title4","Title5","Title6","Title7","Title8"]}
-Language codes: te=Telugu hi=Hindi ta=Tamil ml=Malayalam kn=Kannada en=English bn=Bengali. Empty string if not specified.
-Pick 6–8 real, well-known movies that perfectly match the query. Use exact, official English movie titles.`
-          },
-          { role: 'user', content: rawInput }
-        ]
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: rawInput })
     });
 
-    const groqData  = await groqRes.json();
-    const rawText   = groqData.choices?.[0]?.message?.content?.trim() || '{}';
-    // Strip code fences if model wraps in markdown
-    const jsonStr   = rawText.replace(/```json?\s*|\s*```/g, '').trim();
-    const { lang = '', titles = [] } = JSON.parse(jsonStr);
+    if (!proxyRes.ok) throw new Error('API proxy failed');
+
+    const { lang = '', titles = [] } = await proxyRes.json();
 
     if (!titles.length) throw new Error('Groq returned no titles');
 
@@ -1168,7 +1148,15 @@ Pick 6–8 real, well-known movies that perfectly match the query. Use exact, of
     const searches = titles.map(title =>
       fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(title)}&page=1`)
         .then(r => r.json())
-        .then(d => d.results?.[0] || null)
+        .then(d => {
+          if (!d.results?.length) return null;
+          // Global priority: Find result that matches the detected language
+          if (lang) {
+            const exact = d.results.find(res => res.original_language === lang);
+            if (exact) return exact;
+          }
+          return d.results[0]; // Fallback to most popular
+        })
         .catch(() => null)
     );
 
