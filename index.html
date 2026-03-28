@@ -163,8 +163,9 @@
 
   .header-nav {
     flex: 1; min-width: 320px;
-    display: flex; flex-direction: column; gap: 8px; 
-    align-items: flex-end;
+    display: flex; flex-direction: column; gap: 10px; 
+    align-items: center; /* Centering search relative to filters */
+    justify-content: flex-end;
   }
 
 
@@ -198,9 +199,10 @@
 
 
 
+
   .btn-group {
     display: flex; gap: 10px;
-    justify-content: flex-start;
+    justify-content: center; /* Centered relative to search bar */
     flex-wrap: nowrap;
     overflow-x: auto;
     width: 100%;
@@ -208,6 +210,7 @@
     -ms-overflow-style: none;
     padding: 0 5px 10px 5px;
   }
+
 
   /* Specific Genre buttons hidden on laptop but shown on mobile */
   .genre-filter { display: none; }
