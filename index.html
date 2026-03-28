@@ -1150,10 +1150,11 @@ async function askAI() {
         .then(r => r.json())
         .then(d => {
           if (!d.results?.length) return null;
-          if (lang) {
-            // Priority: Exact native language match
-            const exact = d.results.find(res => res.original_language === lang);
-            if (exact) return exact;
+          if (lang && lang !== 'en') {
+            // Strict regional filter: Find EXACT native language match
+            const native = d.results.find(res => res.original_language === lang);
+            if (native) return native;
+            return null; // DISCARD results that are not in the requested language (e.g. discard English matching a Telugu query)
           }
           return d.results[0];
         })
