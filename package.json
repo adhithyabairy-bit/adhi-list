@@ -1,0 +1,13 @@
+{
+  "name": "adhi-list",
+  "version": "1.0.0",
+  "description": "Movie Recommendation App",
+  "main": "api/ask.js",
+  "scripts": {
+    "start": "node api/ask.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "type": "module"
+}
