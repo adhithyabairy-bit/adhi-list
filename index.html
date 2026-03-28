@@ -98,6 +98,7 @@
 
 
 
+
   header {
     position: sticky; top: 0; z-index: 1000;
     padding: 10px 4%;
@@ -106,7 +107,11 @@
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between;
     gap: 15px 30px; flex-wrap: wrap;
+    transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
   }
+
+  header.hidden { transform: translateY(-100%); }
+
 
   .logo-area { 
     display: flex; flex-direction: column; align-items: flex-start;
@@ -261,10 +266,14 @@
   }
 
 
+
   .spin-section {
     display: flex; justify-content: center; gap: 15px;
     padding: 20px;
+    background: var(--bg);
+    position: sticky; top: 0; z-index: 999;
   }
+
 
   .spin-btn {
     border: none; border-radius: 12px;
@@ -505,8 +514,17 @@
 
 
 
-    .spin-btn { padding: 10px 20px; font-size: 0.9rem; }
+
+    .spin-section { 
+      padding: 12px; gap: 8px; 
+      position: sticky; top: 0; z-index: 999;
+      background: rgba(5, 5, 7, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+    }
+    .spin-btn { padding: 10px 20px; font-size: 0.9rem; flex: 1; }
   }
+
 
 
 
@@ -1154,6 +1172,7 @@ async function askAI() {
     chatMsg.innerHTML = responseTemplates[Math.floor(Math.random() * responseTemplates.length)];
     status.innerHTML = `✨ Matches populated in the grid below.`;
     
+    openAI();
     renderGrid();
     setTimeout(() => {
       document.getElementById('grid-label').scrollIntoView({ behavior:'smooth', block:'start' });
@@ -1431,8 +1450,24 @@ function initBackdrops() {
 }
 
 
+
+// ── SCROLL REVEAL HEADER ENGINE ──
+let lastScroll = 0;
+window.addEventListener('scroll', () => {
+  const currentScroll = window.pageYOffset;
+  const header = document.querySelector('header');
+  
+  if (currentScroll > lastScroll && currentScroll > 150) {
+    header.classList.add('hidden');
+  } else {
+    header.classList.remove('hidden');
+  }
+  lastScroll = currentScroll;
+});
+
 debouncedRender();
 (async () => {
+
   for (const lang of Object.keys(LANGS)) {
     _loadLang(lang);
     // Refresh backdrops once we have some movies
