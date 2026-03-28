@@ -786,6 +786,8 @@ function _toMovie(m, lang = 'en') {
     cast: ''
   };
   
+
+
   MOVIES.push(mov); // Register in global pool (CRITICAL for Modal)
   _cq.push(mov);    // Queue for credits
   if (!_cf) _processCreditsQ();
@@ -1181,11 +1183,21 @@ async function askAI() {
       return true;
     });
 
-    aiMatches = unique.map((m, i) => {
-      const mov     = _toMovie(m, lang || m.original_language);
-      const isPick  = i < titles.length; // Titles from Groq rank higher
-      const social  = Math.log10((m.vote_count || 1) + 1) * 12;
-      mov.aiScore   = Math.min(99, Math.round((isPick ? 75 : 45) + social + (m.vote_average || 0)));
+    // ── STEP 3: Multi-Layer Language Firewall ──
+    const L_EXTRACT = {te:/telugu|tollywood/i, hi:/hindi|bollywood/i, ta:/tamil|kollywood/i, ml:/malayalam/i, kn:/kannada/i};
+    let fLang = lang;
+    if (!fLang) { for (const [code, reg] of Object.entries(L_EXTRACT)) { if (reg.test(rawInput)) { fLang = code; break; } } }
+    
+    // Strict Industry Isolation: Filter out ANY movie from the wrong industry
+    const pool = (fLang && fLang !== 'en') 
+      ? unique.filter(m => m.original_language === fLang) 
+      : unique;
+
+    aiMatches = pool.map((m, i) => {
+      const mov     = _toMovie(m, fLang || m.original_language);
+      const isPick  = i < titles.length; // AI picks rank higher
+      const social  = Math.min(15, Math.log10((m.vote_count || 1) + 1) * 3);
+      mov.aiScore   = Math.min(99, Math.round((isPick ? 80 : 40) + social + (m.vote_average || 0)));
       return mov;
     }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 30);
 

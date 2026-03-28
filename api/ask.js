@@ -32,10 +32,9 @@ RESOURCES: te=Telugu, hi=Hindi, ta=Tamil, ml=Malayalam, kn=Kannada, en=English, 
 
 RULES (STRICT):
 1. Respond ONLY with a valid JSON object: {"lang": "te|hi|ta|ml|kn|en|bn|", "titles": ["..."]}
-2. LANGUAGE DETECTION: If the user says "Telugu", "Hindi", etc., detect the code (te, hi) and set it in "lang".
-3. REGIONAL SEARCH: If a language is detected (e.g. "te"), you MUST ONLY pick movies where that language is the ORIGINAL version. (e.g., "Best Sci-Fi in Telugu" must ONLY list native Telugu movies like Kalki 2898 AD, Eega, Oke Oka Jeevitham, etc.). 
-- ABSOLUTELY PROHIBITED: Do NOT list Hollywood/English movies for regional requests. NO English movies allowed in the output if "lang" is not "en".
-4. OUTPUT: Provide 6-8 real, high-quality titles. No markdown code blocks, no text outside JSON.`
+2. REGIONAL SEARCH (CRITICAL): If user mentions "Telugu/Tollywood", set lang="te". If "Hindi/Bollywood", set lang="hi". If "Tamil/Kollywood", set lang="ta". If "Malayalam", set lang="ml". If "Kannada", set lang="kn".
+- INDUSTRY ISOLATION (MANDATORY): For regional requests, pick JUST movies where the original version is in that language. ABSOLUTELY NO Hollywood/English movies in regional results.
+4. OUTPUT: Provide 6-8 real, high-quality titles. Respond with raw JSON ONLY.`
           },
           { role: 'user', content: query }
         ]
