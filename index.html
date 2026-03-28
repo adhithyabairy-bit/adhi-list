@@ -993,7 +993,7 @@ function renderGrid() {
       <div class="movie-card reveal" onclick="openModalById(${m.id})">
         <div class="card-poster">
           ${poster}
-          <div class="card-rating-float">${m.aiScore ? '✨ ' + m.aiScore + '%' : '★ ' + m.rating}</div>
+          <div class="card-rating-float">${m.aiScore ? '✨ 100%' : '★ ' + m.rating}</div>
           <div class="card-badge">${dLang}</div>
           <div class="card-overlay">
              <div class="card-title">${m.title}</div>
@@ -1200,10 +1200,9 @@ async function askAI() {
 
     aiMatches = unique.map((m, i) => {
       const mov     = _toMovie(m, fLang || m.original_language);
-      const isPick  = i < titles.length; 
-      const popular = Math.log10((m.vote_count || 1) + 1) * 5;
-      // UNCAP SCORE & FORCE AI PRIORITY: Verified AI picks get a +500 baseline so they never lose to raw popularity
-      mov.aiScore   = (isPick ? 500 : 0) + popular + (m.vote_average || 0);
+      const popular = Math.log10((m.vote_count || 1) + 1) * 20;
+      // Allow live TMDB Popularity to natively push global blockbusters (like Kalki) to the absolute top
+      mov.aiScore   = popular + (m.vote_average || 0) + 1; 
       return mov;
     }).sort((a,b) => b.aiScore - a.aiScore);
 
@@ -1276,9 +1275,8 @@ async function _tmdbFallback(rawInput, status, chatMsg) {
 
     aiMatches = unique.map((m, i) => {
       const mov = _toMovie(m, fLang || m.original_language);
-      const isSearchMatch = i < (kw ? 5 : 0);
       const popular = Math.log10((m.vote_count || 1) + 1) * 5;
-      mov.aiScore = (isSearchMatch ? 500 : 0) + popular + (m.vote_average || 0);
+      mov.aiScore = popular + (m.vote_average || 0);
       return mov;
     }).sort((a,b) => b.aiScore - a.aiScore).slice(0, 30);
 
