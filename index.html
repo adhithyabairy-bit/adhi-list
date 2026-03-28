@@ -1109,20 +1109,18 @@ async function askAI() {
   status.innerHTML = "✨ AI Matchmaker is analyzing your request...";
   chatMsg.innerHTML = "Deep scanning movie titles & metadata...";
 
-  // ── ADVANCED NORMALIZATION (PREDICTS INTENT) ──
-  let input = rawInput
-    .replace(/telgu|telgur|tlg/g, 'telugu')
-    .replace(/hindhi|hndi|hnd/g, 'hindi')
-    .replace(/tamizh|tamilan|tml/g, 'tamil')
-    .replace(/superpower|super power|superhero|super hero|super powers/g, 'superhero')
-    .replace(/sci fi|scifi|science fiction|sf/g, 'sci-fi')
-    .replace(/rom com|romcom|romantic|love story/g, 'romance')
-    .replace(/suspense|thrill/g, 'thriller')
-    .replace(/scary|ghost|spook/g, 'horror')
-    .replace(/kannadaa|knd/g, 'kannada')
-    .replace(/hollywood|english/g, 'english');
+  const genreMatches = {
+    'action': 28, 'adventure': 12, 'animation': 16, 'comedy': 35, 'crime': 80,
+    'documentary': 99, 'drama': 18, 'family': 10751, 'fantasy': 14, 'history': 36,
+    'horror': 27, 'music': 10402, 'mystery': 9648, 'romance': 10749, 'sci-fi': 878,
+    'scifi': 878, 'science fiction': 878, 'thriller': 53, 'war': 10752, 'western': 37,
+    'superhero': 14, 'superpower': 14, 'super power': 14, 'super hero': 14, 'marvel': 28, 'dc': 28,
+    'ghost': 27, 'spirit': 27, 'magic': 14, 'scary': 27, 'funny': 35, 'kid': 10751, 'animation': 16,
+    'love': 10749, 'biography': 36, 'historical': 36, 'fighting': 28, 'suspense': 53
+  };
 
-  // ── PARAMETER EXTRACTION ──
+  // ── SUPER-ROBUST SPELLING & INTENT MAP ──
+  let input = rawInput
   const GENS = {action:28, adventure:12, animation:16, comedy:35, crime:80, drama:18, family:10751, fantasy:14, history:36, horror:27, mystery:9648, romance:10749, 'sci-fi':878, thriller:53, war:10752, western:37};
   const LGS = {telugu:'te', hindi:'hi', tamil:'ta', malayalam:'ml', kannada:'kn', english:'en'};
   
