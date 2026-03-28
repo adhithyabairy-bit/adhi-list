@@ -1108,7 +1108,7 @@ async function askAI() {
   const rawInput = inputEl?.value.trim() || '';
   if (!rawInput) return;
 
-  // Close modal & show loading state immediately
+  // ── Instant UI feedback ──
   openAI();
   aiMatches = [];
   aiMode = true;
@@ -1118,78 +1118,125 @@ async function askAI() {
 
   const status  = document.getElementById('ai-status');
   const chatMsg = document.getElementById('ai-chat-msg');
-  if (status)  status.innerHTML  = '🧠 Searching...';
-  if (chatMsg) chatMsg.innerHTML = 'Finding your movies...';
+  if (status)  status.innerHTML  = '🧠 Thinking...';
+  if (chatMsg) chatMsg.innerHTML = 'Analysing your request...';
 
   try {
-    // 1. Normalise
+    // ── 1. Normalise query ──
     const q = rawInput.toLowerCase()
       .replace(/\b(telgu|telgur|telegu)\b/g, 'telugu')
       .replace(/\b(hindhi|hndi)\b/g, 'hindi')
       .replace(/\b(tamizh|tml)\b/g, 'tamil')
-      .replace(/science fiction|sci fi/g, 'sci-fi')
+      .replace(/science fiction|sci[ -]fi/g, 'scifi')
       .replace(/super\s*power|superhero|super\s*hero|superhuman/g, 'superpower');
 
-    // 2. Detect language
+    // ── 2. Detect language ──
     const LANGS = {telugu:'te',hindi:'hi',tamil:'ta',malayalam:'ml',kannada:'kn',english:'en',bengali:'bn'};
     let lang = '';
     for (const [name, code] of Object.entries(LANGS)) {
       if (q.includes(name)) { lang = code; break; }
     }
 
-    // 3. Strip stopwords → meaningful keywords only
+    // ── 3. Mood / concept → genre mapping (the "AI brain") ──
+    const MOOD_GENRE = {
+      // moods
+      inspiring:18, motivating:18, uplifting:18, emotional:18, touching:18,
+      sad:18, depressing:18, dark:80, disturbing:27, scary:27, creepy:27,
+      funny:35, hilarious:35, comedy:35, romantic:10749, love:10749,
+      // themes
+      war:10752, historical:36, history:36, biographical:36, biography:36,
+      space:878, scifi:878, superpower:[14,28], superhero:[14,28],
+      heist:80, crime:80, mystery:9648, suspense:53, thriller:53,
+      adventure:12, action:28, fantasy:14, animation:16, family:10751,
+      drama:18, coming:'of', // handled specially
+    };
+    const moodGenreIds = [];
+    for (const [word, id] of Object.entries(MOOD_GENRE)) {
+      if (q.includes(word) && id !== 'of') {
+        Array.isArray(id) ? moodGenreIds.push(...id) : moodGenreIds.push(id);
+      }
+    }
+
+    // ── 4. Detect "like X" / "similar to X" pattern ──
+    const likePattern = /\b(?:like|similar to|same as|as good as|reminds? (?:me )?of)\s+(.+?)(?:\s+(?:movies?|films?)|$)/i;
+    const likeMatch = rawInput.match(likePattern);
+    const refTitle = likeMatch ? likeMatch[1].trim() : '';
+
+    // ── 5. Strip stopwords for keyword search ──
     const STOP = new Set([
       'movies','movie','films','film','popular','best','top','latest','new','old',
-      'good','great','watch','find','give','some','the','and','for','with',
+      'good','great','watch','find','give','some','the','and','for','with','like',
+      'similar','same','similar','tell','show','want','need','something',
       'telugu','hindi','tamil','malayalam','kannada','english','bengali',
       'indian','south','bollywood','hollywood','tollywood','kollywood',
     ]);
-    const keywords = q.split(/\s+/).filter(w => w.length > 2 && !STOP.has(w)).join(' ').trim();
+    // Remove reference title words from keyword search to avoid searching the ref movie itself
+    const refWords = new Set(refTitle.toLowerCase().split(/\s+/));
+    const keywords = q.split(/\s+/)
+      .filter(w => w.length > 2 && !STOP.has(w) && !refWords.has(w))
+      .join(' ').trim();
 
-    // 4. Genre detection for discover enrichment
-    const GENRE_MAP = {
-      action:28, adventure:12, comedy:35, drama:18, horror:27,
-      romance:10749, thriller:53, 'sci-fi':878, fantasy:14,
-      animation:16, crime:80, mystery:9648, family:10751, superpower:[14,28],
-    };
-    const genreIds = [];
-    for (const [name, id] of Object.entries(GENRE_MAP)) {
-      if (q.includes(name)) { Array.isArray(id) ? genreIds.push(...id) : genreIds.push(id); }
+    // ── 6. Smart parallel fetch strategy ──
+    const calls = [];
+    let refMovieId = null;
+
+    if (refTitle) {
+      // Step A: Find the reference movie first (single fast lookup)
+      const refData = await fetch(
+        `${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(refTitle)}&page=1`
+      ).then(r => r.json());
+
+      refMovieId = refData.results?.[0]?.id;
+
+      if (refMovieId) {
+        // Step B: Get TMDB's official recommendations + similar (fired in parallel)
+        calls.push(fetch(`${API}/movie/${refMovieId}/recommendations?api_key=${KEY}&page=1`).then(r => r.json()));
+        calls.push(fetch(`${API}/movie/${refMovieId}/similar?api_key=${KEY}&page=1`).then(r => r.json()));
+
+        // Also use the reference movie's genres as discover filter
+        const refGenres = refData.results?.[0]?.genre_ids || [];
+        if (refGenres.length || moodGenreIds.length) {
+          const gSet = [...new Set([...refGenres, ...moodGenreIds])].slice(0, 2); // max 2 genres
+          let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=100`;
+          if (lang) dUrl += `&with_original_language=${lang}`;
+          if (gSet.length) dUrl += `&with_genres=${gSet.join(',')}`;
+          calls.push(fetch(dUrl).then(r => r.json()));
+        }
+      }
     }
 
-    // 5. Fire calls in parallel
-    const calls = [];
-
-    // PRIMARY — text search (exact, fast, like ChatGPT-style lookup)
-    if (keywords) {
+    // Keyword search (for non-"like X" queries or as enrichment)
+    if (keywords && !refTitle) {
       calls.push(fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(keywords)}&page=1`).then(r => r.json()));
     }
 
-    // SECONDARY — language discover (enriches with more same-language titles)
-    if (lang) {
-      let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=200&with_original_language=${lang}`;
-      const g = [...new Set(genreIds)];
-      if (g.length) dUrl += `&with_genres=${g.join(',')}`;
+    // Language + genre discover (always run if language is specified)
+    if (lang && !refTitle) {
+      const gSet = [...new Set(moodGenreIds)];
+      let dUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=100&with_original_language=${lang}`;
+      if (gSet.length) dUrl += `&with_genres=${gSet.join(',')}`;
       calls.push(fetch(dUrl).then(r => r.json()));
     }
 
-    // FALLBACK — popular all-time if nothing to search
+    // Pure fallback (nothing matched)
     if (!calls.length) {
       calls.push(fetch(`${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&vote_count.gte=500`).then(r => r.json()));
     }
 
+    // ── 7. Resolve all calls ──
     const responses = await Promise.all(calls);
     const allRaw   = responses.flatMap(d => d.results || []);
 
-    // 6. Deduplicate
+    // ── 8. Deduplicate ──
     const seen   = new Set();
+    if (refMovieId) seen.add(refMovieId); // exclude the reference movie itself
     const unique = allRaw.filter(m => { if (seen.has(m.id)) return false; seen.add(m.id); return true; });
 
-    // 7. Language post-filter (keep all if filtering drops < 3 results)
+    // ── 9. Language post-filter ──
     const langFiltered = lang ? unique.filter(m => m.original_language === lang) : unique;
     const pool = (lang && langFiltered.length >= 3) ? langFiltered : unique;
 
-    // 8. Score & rank by social proof
+    // ── 10. Score (social proof + quality) ──
     aiMatches = pool.map(m => {
       const mov    = _toMovie(m, lang || m.original_language);
       const social = Math.min(60, Math.log10((m.vote_count || 1) + 1) * 17);
@@ -1201,13 +1248,15 @@ async function askAI() {
     renderGrid();
 
     if (aiMatches.length) {
-      if (status)  status.innerHTML  = `✨ Found ${aiMatches.length} results!`;
-      if (chatMsg) chatMsg.innerHTML = `Top match: <strong>${aiMatches[0].title}</strong>`;
+      const label = refTitle ? `Movies like <strong>${refTitle}</strong>` : `${aiMatches.length} results found`;
+      if (status)  status.innerHTML  = '✨ Done!';
+      if (chatMsg) chatMsg.innerHTML = label + ` — top pick: <strong>${aiMatches[0].title}</strong>`;
     } else {
       if (status) status.innerHTML = 'No results — try different keywords.';
       aiMode = false;
       renderGrid();
     }
+
   } catch (e) {
     console.error('AI error:', e);
     if (status) status.innerHTML = 'Search failed — check your connection.';
@@ -1215,6 +1264,7 @@ async function askAI() {
     renderGrid();
   }
 }
+
 
 
 // ── MODAL ──
