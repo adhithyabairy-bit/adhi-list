@@ -99,25 +99,26 @@
 
 
 
+
   #navbar {
-    position: sticky; top: 0; z-index: 1000;
+    position: fixed; top: 0; left: 0; right: 0;
+    z-index: 2000;
+    transition: transform 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+    background: rgba(5, 5, 7, 0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
   }
 
   header {
-    padding: 10px 4%;
-    background: rgba(5, 5, 7, 0.95);
-    backdrop-filter: blur(30px);
-    border-bottom: 1px solid var(--border);
+    padding: 12px 4%;
     display: flex; align-items: center; justify-content: space-between;
     gap: 15px 30px; flex-wrap: wrap;
-    transition: margin-top 0.4s cubic-bezier(0.165, 0.84, 0.44, 1), opacity 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
   }
 
-  #navbar.hidden header { 
-    margin-top: -300px; /* Hide header by sliding its contents up */
-    opacity: 0;
-    pointer-events: none;
-  }
+  .nav-spacer { height: 200px; } /* Prevent content from being hidden behind fixed header */
+  @media (max-width: 768px) { .nav-spacer { height: 260px; } }
+
 
 
 
@@ -276,13 +277,12 @@
 
 
 
+
   .spin-section {
     display: flex; justify-content: center; gap: 15px;
-    padding: 20px;
-    background: rgba(5, 5, 7, 0.95);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
   }
+
 
 
 
@@ -619,7 +619,9 @@
 
 <div class="noise"></div>
 <div class="bg-elements" id="bg-elements"></div>
-<div class="aurora"></div>
+
+<div class="nav-spacer"></div>
+
 
 
 
@@ -1459,20 +1461,24 @@ function initBackdrops() {
 
 
 
-// ── SCROLL REVEAL HEADER ENGINE ──
-let lastScroll = 0;
 
+// ── SCROLL REVEAL ENGINE ──
+let lastScroll = 0;
 window.addEventListener('scroll', () => {
   const currentScroll = window.pageYOffset;
   const navbar = document.getElementById('navbar');
+  const headerHeight = document.querySelector('header').offsetHeight;
   
   if (currentScroll > lastScroll && currentScroll > 200) {
-    navbar.classList.add('hidden');
+    // Scrolling down: Hide header portion, keep actions at top
+    navbar.style.transform = `translateY(-${headerHeight}px)`;
   } else {
-    navbar.classList.remove('hidden');
+    // Scrolling up: Show everything
+    navbar.style.transform = `translateY(0)`;
   }
-  lastScroll = currentScroll;
+  lastScroll = Math.max(0, currentScroll);
 });
+
 
 
 debouncedRender();
