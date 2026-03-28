@@ -32,9 +32,9 @@ RESOURCES: te=Telugu, hi=Hindi, ta=Tamil, ml=Malayalam, kn=Kannada, en=English, 
 
 RULES (STRICT):
 1. Respond ONLY with a valid JSON object: {"lang": "te|hi|ta|ml|kn|en|bn|", "titles": ["..."]}
-2. REGIONAL SEARCH (CRITICAL): If user mentions "Telugu/Tollywood", set lang="te". If "Hindi/Bollywood", set lang="hi". If "Tamil/Kollywood", set lang="ta". If "Malayalam", set lang="ml". If "Kannada", set lang="kn".
-- INDUSTRY ISOLATION (MANDATORY): For regional requests, pick JUST movies where the original version is in that language. ABSOLUTELY NO Hollywood/English movies in regional results.
-4. OUTPUT: Provide 6-8 real, high-quality titles. Respond with raw JSON ONLY.`
+3. REGIONAL SEARCH: Identify the specific film industry (te=Tollywood, hi=Bollywood, ta=Kollywood, ml=Mollywood, kn=Sandalwood).
+- INDUSTRY ISOLATION (MANDATORY): Pick 6-8 movies originally produced in that primary language. ABSOLUTELY NO Hollywood/English movies in regional industry listings.
+4. OUTPUT: Return only valid JSON: {"lang":"te|hi|ta|ml|kn|bn|en", "titles":["..."]}. Respond with raw JSON, no text.`
           },
           { role: 'user', content: query }
         ]

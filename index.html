@@ -1153,28 +1153,34 @@ async function askAI() {
 
     if (chatMsg) chatMsg.innerHTML = `AI found ${titles.length} picks — fetching from TMDB...`;
 
-    // ── STEP 2: Intelligent Multi-Fetch (~200ms) ──
+    // ── STEP 2: Intelligent Native-Context Fetch (~300ms) ──
+    const L_EXT = {te:/telugu|tollywood/i, hi:/hindi|bollywood/i, ta:/tamil|kollywood/i, ml:/malayalam/i, kn:/kannada/i};
+    let fLang = lang;
+    if (!fLang) { for (const [c, r] of Object.entries(L_EXT)) { if (r.test(rawInput)) { fLang = c; break; } } }
+    
+    // NATIVE CONTEXT: Injects specific locale into TMDB to prioritize native results
+    const localeParams = fLang && fLang !== 'en' ? `&language=${fLang}-IN&region=IN` : '';
+
     const calls = titles.map(title =>
-      fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(title)}&page=1`)
+      fetch(`${API}/search/movie?api_key=${KEY}&query=${encodeURIComponent(title)}&page=1${localeParams}`)
         .then(r => r.json())
         .then(d => {
           if (!d.results?.length) return null;
-          if (lang && lang !== 'en') {
-            // Strict regional filter: Find EXACT native language match
-            const native = d.results.find(res => res.original_language === lang);
+          if (fLang && fLang !== 'en') {
+            const native = d.results.find(res => (res.original_language || '').toLowerCase() === fLang.toLowerCase());
             if (native) return native;
-            return null; // DISCARD results that are not in the requested language (e.g. discard English matching a Telugu query)
+            return null; // DISCARD non-native results for industry-specific requests
           }
-          return d.results[0];
+          return d.results[0]; 
         })
         .catch(() => null)
     );
 
-    // Also fire a discovery call in parallel if language is detected to ensure "perfect" regional results
-    if (lang) {
+    // Parallel Discovery scan with industry-specific filters
+    if (fLang && fLang !== 'en') {
       const gids = {action:28,comedy:35,scifi:878,horror:27,thriller:53,drama:18,fantasy:14};
       const moodGenres = Object.entries(gids).filter(([k]) => rawInput.toLowerCase().includes(k)).map(e => e[1]).join(',');
-      let discUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&with_original_language=${lang}`;
+      let discUrl = `${API}/discover/movie?api_key=${KEY}&sort_by=vote_count.desc&page=1&with_original_language=${fLang}${localeParams}`;
       if (moodGenres) discUrl += `&with_genres=${moodGenres}`;
       calls.push(fetch(discUrl).then(r => r.json()).then(d => d.results || []));
     }
@@ -1182,34 +1188,24 @@ async function askAI() {
     const resps = await Promise.all(calls);
     const rawMovies = resps.flatMap(r => Array.isArray(r) ? r : [r]).filter(Boolean);
 
-    // Deduplicate & score
+    // Deduplicate & Industry Firewall
     const seen = new Set();
     const unique = rawMovies.filter(m => {
       if (!m.id || seen.has(m.id)) return false;
+      if (fLang && fLang !== 'en' && (m.original_language || '').toLowerCase() !== fLang.toLowerCase()) return false;
       seen.add(m.id);
       return true;
     });
 
-    // ── STEP 3: The "Failsafe" Industry Firewall ──
-    const L_EXT = {te:/telugu|tollywood/i, hi:/hindi|bollywood/i, ta:/tamil|kollywood/i, ml:/malayalam/i, kn:/kannada/i};
-    let fLang = lang;
-    if (!fLang) { for (const [c, r] of Object.entries(L_EXT)) { if (r.test(rawInput)) { fLang = c; break; } } }
-    
-    // IF WE ARE IN REGIONAL MODE, DELETE EVERYTHING THAT IS NOT THAT LANGUAGE
-    const pool = (fLang && fLang !== 'en') 
-      ? unique.filter(m => (m.original_language || '').toLowerCase() === fLang.toLowerCase()) 
-      : unique;
-
-    // Map to permanent results but prioritize language integrity
-    aiMatches = pool.map((m, i) => {
-      const mov = _toMovie(m, fLang || m.original_language);
-      const isAIPick = i < titles.length; 
-      const popular = Math.log10((m.vote_count || 1) + 1) * 10;
-      mov.aiScore = Math.min(99, Math.round((isAIPick ? 80 : 40) + popular + (m.vote_average || 0)));
+    aiMatches = unique.map((m, i) => {
+      const mov     = _toMovie(m, fLang || m.original_language);
+      const isPick  = i < titles.length; 
+      const popular = Math.log10((m.vote_count || 1) + 1) * 15;
+      mov.aiScore   = Math.min(99, Math.round((isPick ? 80 : 40) + popular + (m.vote_average || 0)));
       return mov;
     }).sort((a,b) => b.aiScore - a.aiScore);
 
-    if (label) label.innerText = (fLang && fLang !== 'en') ? `Showing 100% Pure ${LANGS_REV[fLang] || fLang.toUpperCase()} Results` : `AI Results for "${rawInput}"`;
+    if (label) label.innerText = fLang && fLang !== 'en' ? `Industry Discovery: ${LANGS_REV[fLang] || fLang.toUpperCase()} Cinema` : `AI Recommendations for "${rawInput}"`;
     renderGrid();
 
     if (aiMatches.length) {
