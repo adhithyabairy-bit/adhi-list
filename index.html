@@ -96,20 +96,23 @@
 
 
 
+
   header {
     position: sticky; top: 0; z-index: 1000;
-    padding: 10px 4%;
+    padding: 30px 4%;
     background: rgba(5, 5, 7, 0.95);
     backdrop-filter: blur(30px);
     border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 15px 30px; flex-wrap: wrap;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 20px;
   }
 
   .logo-area { 
-    display: flex; flex-direction: column; align-items: flex-start;
-    text-align: left;
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center;
   }
+
 
 
   .logo {
@@ -158,16 +161,15 @@
 
 
   .header-nav {
-    flex: 1; min-width: 320px;
-    display: flex; flex-direction: column; gap: 10px; 
-    align-items: flex-end;
-    overflow: hidden;
+    width: 100%; max-width: 600px;
+    display: flex; flex-direction: column; gap: 15px; 
+    align-items: center;
   }
 
 
   .search-wrap {
-    width: 100%; max-width: 480px; position: relative;
-    margin: 0;
+    width: 100%; max-width: 340px; position: relative;
+    margin: 5px 0;
   }
 
   
@@ -192,16 +194,17 @@
 
 
 
+
   .btn-group {
-    display: flex; gap: 10px;
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
+    display: flex; gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    max-width: 400px;
+    margin: 0 auto;
     width: 100%;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    padding: 0 5px 10px 5px;
+    padding-bottom: 10px;
   }
+
 
 
 
