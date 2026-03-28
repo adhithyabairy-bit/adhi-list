@@ -700,8 +700,13 @@ const _cq = []; // background credits queue
 let _cf = false;
 let _uid = 1;
 
-// ── CORE: DATA TRANSFORMER ──
+
+// ── CORE: DATA TRANSFORMER & REGISTER ──
 function _toMovie(m, lang = 'en') {
+  // Check if we already have this movie to avoid duplicates & lost references
+  let existing = MOVIES.find(x => x.tmdbId === m.id);
+  if (existing) return existing;
+
   let displayLang = lang.includes('_') ? lang.split('_')[1] : (LANGS_REV[m.original_language] || m.original_language.toUpperCase());
   if (lang.startsWith('dubbed_')) displayLang += " Dubbed";
   else if (displayLang[0]) displayLang = displayLang[0].toUpperCase() + displayLang.slice(1);
@@ -723,10 +728,12 @@ function _toMovie(m, lang = 'en') {
     cast: ''
   };
   
-  _cq.push(mov);
+  MOVIES.push(mov); // Register in global pool (CRITICAL for Modal)
+  _cq.push(mov);    // Queue for credits
   if (!_cf) _processCreditsQ();
   return mov;
 }
+
 
 async function _processCreditsQ() {
   _cf = true;
@@ -769,20 +776,20 @@ async function _fetchPage(lang, page) {
     const d = await r.json();
     if (!d.results) return 0;
 
+
     d.results.forEach(m => {
       // Ignore if native movie shows up in dubbed list
       if (lang.startsWith('dubbed_') && m.original_language === LANGS[lang.split('_')[1]]) return;
 
-      if (!_seen.has(m.id)) { 
-        _seen.add(m.id); 
-        MOVIES.push(_toMovie(m, lang)); 
+      const mov = _toMovie(m, lang); // Automatically handles deduplication & pool registration
+
+      if (lang.startsWith('dubbed_')) {
+        if (!mov.dubbedLangs.includes(lang)) mov.dubbedLangs.push(lang);
       } else {
-        const existing = MOVIES.find(x => x.tmdbId === m.id);
-        if (existing && lang.startsWith('dubbed_')) {
-          if (!existing.dubbedLangs.includes(lang)) existing.dubbedLangs.push(lang);
-        }
+        mov.isNative = true;
       }
     });
+
     return d.total_pages || 0;
   } catch(e) { return 0; }
 }
