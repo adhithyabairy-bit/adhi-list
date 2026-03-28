@@ -1172,6 +1172,21 @@ async function askAI() {
       results = d.results || [];
     }
 
+    // Deduplicate by TMDB ID
+    const uniqueMap = new Map();
+    results.forEach(m => uniqueMap.set(m.id, m));
+    results = Array.from(uniqueMap.values());
+
+    // ── STRICT ACCURACY FILTERING ──
+    if (targetGenreId) {
+      results = results.filter(m => {
+        const hasGenre = m.genre_ids?.includes(targetGenreId);
+        // Robust keyword check in description if genre is horror (Scary)
+        if (targetGenreId === 27 && m.overview?.toLowerCase().match(/horror|scary|ghost|creepy|terrifying|demon|evil/)) return true;
+        return hasGenre;
+      });
+    }
+
     if (!results.length) {
       status.innerHTML = "I couldn't find any perfect matches in our database for those specific criteria. Try broadening your keywords!";
       chatMsg.innerHTML = "No results found. Maybe try a different genre or time period?";
@@ -1185,6 +1200,7 @@ async function askAI() {
       if (targetLang && m.original_language === targetLang) score += 15;
       let genreHits = (m.genre_ids || []).filter(id => targetGenres.includes(id)).length;
       score += genreHits * 12;
+      if (targetGenreId && m.genre_ids?.includes(targetGenreId)) score += 50; // HEAVY GENRE BOOST
       mov.aiScore = Math.min(99, Math.round(score + (m.popularity / 50)));
       return mov;
     });
